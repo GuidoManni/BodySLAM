@@ -1,2 +1,11 @@
 # Image-Processing lib
 Pillow
+opencv-python
+
+# AI-lib
+torch
+torchvision
+
+# Numerical lib
+numpy
+
