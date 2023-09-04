@@ -12,7 +12,7 @@ import warnings
 import torch
 
 
-from UTILS.load_and_save import FrameIO
+from UTILS.io_utils import FrameIO
 
 class MDEMInterface:
     # This class call/initialize the classes used to interface with the MDEM
