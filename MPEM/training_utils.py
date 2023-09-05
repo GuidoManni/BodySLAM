@@ -21,6 +21,7 @@ class TrainingLoss:
         self.standard_identity_loss = nn.L1Loss()
         self.standard_cycle_loss = nn.L1Loss()
         self.standard_GAN_loss = nn.MSELoss()
+        self.standard_Discr_loss = nn.MSELoss()
 
     def standard_criterion_identity_loss(self, fake_of_the_real, real):
         '''
@@ -178,23 +179,40 @@ class TrainingLoss:
 
         return standard_GAN_loss
 
-    def standard_total_GAN_loss(self, loss_GAN_AB, loss_GAN_BA):
+    def standard_total_GAN_loss(self, real_frA, fake_frA, real_frB, fake_frB):
         '''
         Compute the standard total Adversarial Loss following this formula:
 
         standatd_total_identity_loss = (loss_GAN_AB + loss_GAN_BA)/2
 
         Parameters:
-        - loss_GAN_AB: the loss from the adversarial loss of the GAB (the generator that takes A to generate B)
-        - loss_GAB_BA: the loss from the adversarial loss of the GBA (the generator that takes B to generate A)
+        - real_frA: the real frame
+        - fake_frA: the generated frame
+        - real_frB: the real frame
+        - fake_frB: the generated frame
 
         Return:
         - standatd_total_identity_loss
         '''
 
+        loss_GAN_AB = self.standard_criterion_GAN_loss(fake_frA, real_frA)
+        loss_GAN_BA = self.standard_criterion_GAN_loss(fake_frB, real_frB)
         standatd_total_identity_loss = (loss_GAN_AB + loss_GAN_BA) / 2
 
         return standatd_total_identity_loss
+
+    def standard_criterion_discriminator_loss(self, term1, term2):
+        # TODO: commenta questa funzione perbene!
+        loss = self.standard_Discr_loss(term1, term2)
+        return loss
+
+    def standard_discriminator_loss(self, term1, valid, term2, fake):
+        # TODO: commenta questa funzione perbene!
+        loss_real = self.standard_criterion_discriminator_loss(term1, valid)
+        loss_fake = self.standard_criterion_discriminator_loss(term2, fake)
+
+        loss_discr = (loss_real + loss_fake) / 2
+        return loss_discr
 
 
 
