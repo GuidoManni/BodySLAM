@@ -27,7 +27,7 @@ import cv2
 
 # Internal module
 from UTILS.io_utils import FrameIO
-from UTILS.geometry_utils import LieEuclideanMapper
+
 
 class PoseDatasetLoader(Dataset):
     '''
@@ -44,12 +44,11 @@ class PoseDatasetLoader(Dataset):
         - size_img: new dim of the img [positive int]
 
         '''
-
+        self.frameIO = FrameIO()
         self.list_of_frames = list_of_frames
         self.list_of_absolute_poses = list_of_absolute_poses
         self.dataset_type = dataset_type
         self.size_img = size_img
-
         if self.dataset_type == "UCBM":
             self.sequential_transform = transforms.Compose([
                 transforms.Resize(self.size_img), # resize the img to the desired size
@@ -72,41 +71,35 @@ class PoseDatasetLoader(Dataset):
         return len(self.list_of_frames)
 
 
-    def compute_relative_pose(self, se3_1, se3_2):
+    def compute_relative_pose(self, SE3_1, SE3_2):
         '''
-        This function computes the relative pose given two poses in se(3) representation
+        This function computes the relative pose given two poses in SE(3) representation
 
         Parameters:
-        - se3_1: prev_pose in se3
-        - se3_2: curr_pose in se3
+        - SE3_1: prev_pose in SE3
+        - SE3_2: curr_pose in SE3
 
         Returns:
         - relative pose between the two
         '''
-        # Convert the poses to SE(3) representation
-        SE3_1 = LieEuclideanMapper.se3_to_SE3(se3_1)
-        SE3_2 = LieEuclideanMapper.se3_to_SE3(se3_2)
 
         # Compute the relative pose in SE(3) representation
         SE3_relative = np.linalg.inv(SE3_1) @ SE3_2
 
-        # Convert the relative pose back to se(3) representation
-        se3_relative = LieEuclideanMapper.SE3_to_se3(SE3_relative)
-
-        return se3_relative
+        return SE3_relative
 
     def __getitem__(self, idx):
         # Check if we are not at the last index
         if self.dataset_type == "EndoSlam":
             if idx < len(self.list_of_frames) - 1:
-                frame1 = FrameIO.load_p_img(self.list_of_frames[idx])
-                frame2 = FrameIO.load_p_img(self.list_of_frames[idx + 1])
+                frame1 = self.frameIO.load_p_img(self.list_of_frames[idx])
+                frame2 = self.frameIO.load_p_img(self.list_of_frames[idx + 1])
                 absolute_pose1 = self.list_of_absolute_poses[idx]
                 absolute_pose2 = self.list_of_absolute_poses[idx + 1]
             else:
                 # If we are at the last index, return the last and second last frames
-                frame1 = FrameIO.load_p_img(self.list_of_frames[-2])  # second last
-                frame2 = FrameIO.load_p_img(self.list_of_frames[-1])  # last
+                frame1 = self.frameIO.load_p_img(self.list_of_frames[-2])  # second last
+                frame2 = self.frameIO.load_p_img(self.list_of_frames[-1])  # last
                 absolute_pose1 = self.list_of_absolute_poses[-2]  # second last
                 absolute_pose2 = self.list_of_absolute_poses[-1]  # last
 
@@ -121,12 +114,12 @@ class PoseDatasetLoader(Dataset):
         elif self.dataset_type == "UCBM":
             # Check if we are not at the last index
             if idx < len(self.list_of_frames) - 1:
-                frame1 = FrameIO.load_p_img(self.list_of_frames[idx])
-                frame2 = FrameIO.load_p_img(self.list_of_frames[idx + 1])
+                frame1 = self.frameIO.load_p_img(self.list_of_frames[idx])
+                frame2 = self.frameIO.load_p_img(self.list_of_frames[idx + 1])
             else:
                 # If we are at the last index, return the last and second last frames
-                frame1 = FrameIO.load_p_img(self.list_of_frames[-2])  # second last
-                frame2 = FrameIO.load_p_img(self.list_of_frames[-1])  # last
+                frame1 = self.frameIO.load_p_img(self.list_of_frames[-2])  # second last
+                frame2 = self.frameIO.load_p_img(self.list_of_frames[-1])  # last
 
             relative_pose = -1 # for the UCBM we don't have the ground truth, this is just a place holder
 
