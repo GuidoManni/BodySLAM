@@ -5,8 +5,11 @@ opencv-python
 # AI-lib
 torch
 torchvision
+wandb
 
 # Numerical lib
 numpy
 pandas
+
+
 
