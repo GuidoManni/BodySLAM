@@ -409,7 +409,7 @@ wandb.init(
 
 training_datset_path = "/home/gvide/Dataset/EndoSlam"
 testing_dataset_path = "/home/gvide/Dataset/EndoSlam_testing/"
-train_model()
+
 
 
 
