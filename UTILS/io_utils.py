@@ -20,6 +20,7 @@ from torch.utils.data import DataLoader
 
 # Numerical lib
 import numpy as np
+import pandas as pd
 
 # Internal module
 from MPEM.dataloader import PoseDatasetLoader
@@ -274,7 +275,7 @@ class DatasetsIO:
 
 
 class XlsxIO:
-    def read_xlsx_pose_file(self, filepath):
+    def read_xlsx_pose_file(self, filepath, convert_to_se3 = False):
         '''
         read the ground truth poses stored in a XLSX files using pandas and conver them in se(3) (LIE space)
 
@@ -305,10 +306,13 @@ class XlsxIO:
             transformation_matrix[0:3, 0:3] = rotation_matrix
             transformation_matrix[0:3, 3] = translation_vector
 
-            # Convert to lie space for training purposes
-            pose_se3 = LieEuclideanMapper.SE3_to_se3(transformation_matrix)
+            if convert_to_se3:
+                # Convert to lie space for training purposes
+                pose_se3 = LieEuclideanMapper.SE3_to_se3(transformation_matrix)
 
-            motion_matrices.append(pose_se3)
+                motion_matrices.append(pose_se3)
+            else:
+                motion_matrices.append(transformation_matrix)
 
         return motion_matrices
 
@@ -354,7 +358,10 @@ class ModelIO:
         torch.save({
             'epoch': training_var['epoch'],
             'iter_on_ucbm': training_var['iter_on_ucbm'],
-            'loss': training_var['loss'],
+            'ate': training_var['ate'],
+            'are': training_var['are'],
+            'rte': training_var['rte'],
+            'rre': training_var['rre'],
             'model_state_dict': model.state_dict(),
             'optimizer_state_dict': optimizer.state_dict()
         }, saving_path)
