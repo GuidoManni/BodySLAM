@@ -7,12 +7,18 @@ Description:
 The Architecture of the neural network used for pose estimation
 '''
 
+# AI-Lib
 import torch
 import torch.nn as nn
+
+# Internal module
+from UTILS.geometry_utils import LieEuclideanMapper
 
 class MultiTaskModel(nn.Module):
     def __init__(self, input_shape):
         super(MultiTaskModel, self).__init__()
+
+        self.LEM = LieEuclideanMapper()
 
         channels, height, width = input_shape
         self.output_shape = (1, height // 2 ** 5, width // 2 ** 5)
@@ -57,7 +63,18 @@ class MultiTaskModel(nn.Module):
 
             pose_output = self.pose_layers(shared_output)
 
-            return pose_output
+            # get the SE3 representation
+            translation_vector = pose_output[:3]
+            rotation_vector = pose_output[3:]
+
+            rotation_matrix = self.LEM.convert_euler_angles_to_rotation_matrix(rotation_vector)
+
+            # create the SE(3) matrix
+            motion_matrix_SE3 = torch.eye(4)
+            motion_matrix_SE3[:3, :3] = rotation_matrix
+            motion_matrix_SE3[:3, 3] = translation_vector
+
+            return motion_matrix_SE3
         elif prev_frame is not None and curr_frame is None:
             prev_frame_output = self.shared_layers(prev_frame)
             discriminator_output = self.discriminator_layers(prev_frame_output)
