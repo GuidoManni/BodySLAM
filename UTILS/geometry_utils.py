@@ -8,6 +8,8 @@ Description:
 Provide the function used for geometric processing
 '''
 
+# AI-lib
+import torch
 
 # Numerical Lib
 import numpy as np
@@ -64,3 +66,34 @@ class LieEuclideanMapper:
         se3 = np.concatenate([t, rvec.flatten()])
 
         return se3
+
+    def convert_euler_angles_to_rotation_matrix(self, rotation_vector):
+        '''
+        This function convert euler angles to a rotation matrix
+
+        Parameter:
+        - rotation_vector: a vector of size 3 that contains [rx, ry, rz]
+
+        Return:
+        - rotation matrix
+        '''
+        rotation_matrix = torch.zeros((3,3))
+
+        # Assuming the rotation order is ZYX
+        rotation_matrix[0, 0] = torch.cos(rotation_vector[1]) * torch.cos(rotation_vector[0])
+        rotation_matrix[0, 1] = torch.cos(rotation_vector[1]) * torch.sin(rotation_vector[0]) - torch.sin(
+            rotation_vector[1]) * torch.sin(rotation_vector[2]) * torch.cos(rotation_vector[0])
+        rotation_matrix[0, 2] = torch.sin(rotation_vector[1]) * torch.cos(rotation_vector[2]) + torch.cos(
+            rotation_vector[1]) * torch.sin(rotation_vector[2]) * torch.sin(rotation_vector[0])
+
+        rotation_matrix[1, 0] = torch.cos(rotation_vector[1]) * -torch.sin(rotation_vector[0])
+        rotation_matrix[1, 1] = torch.cos(rotation_vector[1]) * torch.cos(rotation_vector[0]) + torch.sin(
+            rotation_vector[1]) * torch.sin(rotation_vector[2]) * torch.sin(rotation_vector[0])
+        rotation_matrix[1, 2] = torch.sin(rotation_vector[1]) * -torch.cos(rotation_vector[2]) + torch.cos(
+            rotation_vector[1]) * torch.sin(rotation_vector[2]) * torch.cos(rotation_vector[0])
+
+        rotation_matrix[2, 0] = torch.sin(rotation_vector[1])
+        rotation_matrix[2, 1] = -torch.sin(rotation_vector[2]) * torch.cos(rotation_vector[1])
+        rotation_matrix[2, 2] = torch.cos(rotation_vector[2]) * torch.cos(rotation_vector[1])
+
+        return rotation_matrix
