@@ -13,6 +13,7 @@ import torch
 import torch.nn as nn
 
 # Numerical lib
+import numpy as np
 
 class TrainingLoss:
     def __init__(self):
@@ -216,91 +217,83 @@ class TrainingLoss:
         loss_discr = (loss_real + loss_fake) / 2
         return loss_discr
 
-    def absolute_pose_error(self, ground_truths, predictions):
-        '''
-        This function compute the following pose errors:
-        - Absolute Translation Error (ATE): This is the Euclidean distance between the estimated and true translation error
-        - Absolute Rotation Error (ARE): This is calculated as the angle of the axis-angle representation of the
-                                         relative rotation motion matrix between the estimated and ground truth
-                                         rotation matrices
+    def absolute_pose_error(self, ground_truths, estimates):
+        """
+        Computes the ATE and ARE.
+
         Parameters:
-        - ground_truths: a list containing the ground truth poses
-        - predictions: a list containing the predicted poses from the model
+        ground_truths: list of list of numpy arrays containing ground truth poses ([batch, 4, 4])
+        estimates: list of list of numpy arrays containing estimated poses ([batch, 4, 4])
 
-        Return:
-        - ATE, ARE
-        '''
+        Returns:
+        ate: Absolute Trajectory Error
+        are: Absolute Rotation Error
+        """
+        ate_values = []
+        are_values = []
 
-        assert len(ground_truths) == len(predictions), "Mismatched number of ground truths and predictions"
+        for batch_gt, batch_est in zip(ground_truths, estimates):
+            for gt, est in zip(batch_gt[0], batch_est[0]):
+                # Ensure gt and est are 2D arrays with shape [4, 4]
+                gt = np.reshape(gt, (4, 4))
+                est = np.reshape(est, (4, 4))
 
-        # Initialize to identity matrices
-        abs_gt_pose = np.eye(4)
-        abs_pred_pose = np.eye(4)
+                # Compute the translational error (Euclidean distance between translation parts)
+                trans_error = np.linalg.norm(gt[:3, 3] - est[:3, 3])
+                ate_values.append(trans_error)
 
-        ate_sum = 0.0
-        are_sum = 0.0
-        count = 0
+                # Compute the rotational error (angle between rotation matrices)
+                R_diff = np.dot(gt[:3, :3], est[:3, :3].T)
+                angle_diff = np.arccos((np.trace(R_diff) - 1) / 2)
+                are_values.append(angle_diff)
 
-        for gt, pred in zip(ground_truths, predictions):
-            # Update absolute poses
-            abs_gt_pose = np.dot(abs_gt_pose, gt)
-            abs_pred_pose = np.dot(abs_pred_pose, pred)
-
-            # Compute translation error
-            trans_error = np.linalg.norm(abs_gt_pose[:3, 3] - abs_pred_pose[:3, 3])
-            ate_sum += trans_error
-
-            # Compute rotation error (angle between two rotation matrices)
-            R_gt = abs_gt_pose[:3, :3]
-            R_pred = abs_pred_pose[:3, :3]
-            rotation_error = np.arccos((np.trace(np.dot(R_gt.T, R_pred)) - 1) / 2)
-            are_sum += rotation_error
-
-            count += 1
-
-        ate = ate_sum / count
-        are = are_sum / count
+        # Compute the root mean square error for ATE and mean error for ARE
+        ate = np.sqrt(np.mean(np.square(ate_values)))
+        are = np.mean(are_values)
 
         return ate, are
 
-    def relative_pose_error(self, ground_truths, predictions):
-        '''
-        This function compute the following pose errors:
-        - Relative Rotation Error (RRE): This is calculated as the angular distance between the ground truth relative
-                                         rotation and the predicted relative rotation between consecutive frames.
-        - Relative Translation Error (RTE): This is calculated as the Euclidean distance between the ground truth
-                                            relative translation and the predicted relative translation between
-                                            consecutive frames
+    def relative_pose_error(self, ground_truths, estimates):
+        """
+        Computes the RRE and RTE.
 
         Parameters:
-        - ground_truths: a list containing the ground truth poses
-        - predictions: a list containing the predicted poses from the model
+        ground_truths: list of list of numpy arrays containing ground truth poses ([batch, 4, 4])
+        estimates: list of list of numpy arrays containing estimated poses ([batch, 4, 4])
 
-        Return:
-        - RRE, RTE
-        '''
+        Returns:
+        rre: Relative Rotation Error
+        rte: Relative Translation Error
+        """
+        rre_values = []
+        rte_values = []
 
-        assert len(ground_truths) == len(predictions), "Mismatched number of ground truths and predictions"
+        for batch_gt, batch_est in zip(ground_truths, estimates):
+            for gt_seq, est_seq in zip(batch_gt, batch_est):
+                for i in range(1, len(gt_seq)):
+                    # Ensure gt and est are 2D arrays with shape [4, 4]
+                    gt_prev = np.reshape(gt_seq[i - 1], (4, 4))
+                    gt_curr = np.reshape(gt_seq[i], (4, 4))
 
-        rre_sum = 0.0
-        rte_sum = 0.0
-        count = 0
+                    est_prev = np.reshape(est_seq[i - 1], (4, 4))
+                    est_curr = np.reshape(est_seq[i], (4, 4))
 
-        for gt, pred in zip(ground_truths, predictions):
-            # Compute relative translation error
-            trans_error = np.linalg.norm(gt[:3, 3] - pred[:3, 3])
-            rte_sum += trans_error
+                    # Compute relative poses
+                    gt_rel_pose = np.dot(np.linalg.inv(gt_prev), gt_curr)
+                    est_rel_pose = np.dot(np.linalg.inv(est_prev), est_curr)
 
-            # Compute relative rotation error (angle between two rotation matrices)
-            R_gt = gt[:3, :3]
-            R_pred = pred[:3, :3]
-            rotation_error = np.arccos((np.trace(np.dot(R_gt.T, R_pred)) - 1) / 2)
-            rre_sum += rotation_error
+                    # Compute the translational error (Euclidean distance between translation parts)
+                    trans_error = np.linalg.norm(gt_rel_pose[:3, 3] - est_rel_pose[:3, 3])
+                    rte_values.append(trans_error)
 
-            count += 1
+                    # Compute the rotational error (angle between rotation matrices)
+                    R_diff = np.dot(gt_rel_pose[:3, :3], est_rel_pose[:3, :3].T)
+                    angle_diff = np.arccos(np.clip((np.trace(R_diff) - 1) / 2, -1, 1))
+                    rre_values.append(angle_diff)
 
-        rte = rte_sum / count
-        rre = rre_sum / count
+        # Compute the root mean square error for RTE and mean error for RRE
+        rte = np.sqrt(np.mean(np.square(rte_values)))
+        rre = np.mean(rre_values)
 
         return rre, rte
 

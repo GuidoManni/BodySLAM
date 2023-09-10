@@ -64,17 +64,17 @@ class MultiTaskModel(nn.Module):
             pose_output = self.pose_layers(shared_output)
 
             # get the SE3 representation
-            translation_vector = pose_output[:3]
-            rotation_vector = pose_output[3:]
+            translation_vector = pose_output[:,:3]
+            rotation_vector = pose_output[:,3:]
 
             rotation_matrix = self.LEM.convert_euler_angles_to_rotation_matrix(rotation_vector)
 
             # create the SE(3) matrix
-            motion_matrix_SE3 = torch.eye(4)
-            motion_matrix_SE3[:3, :3] = rotation_matrix
-            motion_matrix_SE3[:3, 3] = translation_vector
+            motion_matrix_SE3 = torch.eye(4).unsqueeze(0).repeat(rotation_vector.shape[0], 1, 1)
+            motion_matrix_SE3[:, :3, :3] = rotation_matrix
+            motion_matrix_SE3[:, :3, 3] = translation_vector
 
-            return motion_matrix_SE3
+            return motion_matrix_SE3, pose_output
         elif prev_frame is not None and curr_frame is None:
             prev_frame_output = self.shared_layers(prev_frame)
             discriminator_output = self.discriminator_layers(prev_frame_output)
