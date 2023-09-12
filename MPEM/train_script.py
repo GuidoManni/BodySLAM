@@ -12,6 +12,7 @@ import sys
 import os
 import itertools
 import argparse
+from tqdm import tqdm
 
 
 # Numerical lib
@@ -20,13 +21,14 @@ import numpy as np
 # Computer Vision lib
 import cv2
 
-# AI-lib
-import torch
-from torchvision.utils import save_image
-from torch.optim import Adam
-
 # Stat lib
 import wandb
+
+# AI-lib
+import torch
+from torch.optim import Adam
+
+
 
 # Internal Module
 from architecture import MultiTaskModel, ConditionalGenerator
@@ -38,11 +40,27 @@ datasetIO = DatasetsIO()
 modelIO = ModelIO()
 
 def train_model(training_dataset_path, testing_dataset_path, num_epoch, batch_size,
-                path_to_the_model, load_model, num_worker = 10, lr = 0.0002, input_shape = (3, 256, 256),
+                path_to_the_model, load_model = False, num_worker = 10, lr = 0.0002, input_shape = (3, 256, 256),
                 standard = False, weights_cycle_loss = [0.5, 0.5, 0.5, 0.5],
-                weights_identity_loss = [0.5, 0.5, 0.5, 0.5]):
+                weights_identity_loss = [0.5, 0.5, 0.5, 0.5], id = "0"):
+    
+    wandb.init(
+        project="Pose Estimator",
+
+        config={
+            "learning_rate": 0.001,
+            "architecture": "CycleGan",
+            "dataset": "Kitti",
+            "epoch": 200,
+            "standard": True,
+            "weights": "[0.5, 0.5, 0.5, 0.5]"
+        }
+    )
+    
     # step 0: detect the DEVICE
-    DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
+    #DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
+    #print(DEVICE)
+    DEVICE = torch.device("cuda")
 
     best_metrics = {'ATE': float('inf'), 'ARE': float('inf'), 'RTE': float('inf'), 'RRE': float('inf')}
 
@@ -82,8 +100,6 @@ def train_model(training_dataset_path, testing_dataset_path, num_epoch, batch_si
         # load PaD_B
         PaD_B, optimizer_PaD_B, _ = modelIO.load_pose_model(path_to_PaD_B, PaD_B, optimizer_PaD_B)
 
-    scaler = torch.cuda.amp.GradScaler()
-    NUM_ACCUMULATION_STEPS = 10
     i_folder = 0
 
     # step 6: the training loop
@@ -152,7 +168,7 @@ def train_model(training_dataset_path, testing_dataset_path, num_epoch, batch_si
                 # we compute our custom cycle loss
                 recov_fr1 = G_BA(fake_fr2, estimated_pose_BA)
                 recov_fr2 = G_AB(fake_fr1, estimated_pose_AB)
-                _, recov_P12 = PaD_B(recov_fr1, recov_fr2)
+                _, recov_P12 = PaD_A(recov_fr1, recov_fr2)
                 _, recov_P21 = PaD_B(recov_fr2, recov_fr1)
                 total_cycle_loss = losses.custom_total_cycle_loss(recov_fr1, real_fr1, recov_P12, estimated_pose_AB, recov_fr2, real_fr2, recov_P21, estimated_pose_BA, weights_cycle_loss)
 
@@ -197,6 +213,7 @@ def train_model(training_dataset_path, testing_dataset_path, num_epoch, batch_si
                    "training_loss_cycle": loss_cycle_epoch/num_batches,
                    "training_loss_identity": loss_identity_epoch/num_batches,
                    })
+
 
         # step 7: testing loop
         total_testing_pose_loss = 0.0
@@ -250,7 +267,7 @@ def train_model(training_dataset_path, testing_dataset_path, num_epoch, batch_si
                         # we compute the standard identity loss of the cyclegan
                         identity_fr1 = G_BA(real_fr1, identity_motion)
                         identity_fr2 = G_AB(real_fr2, identity_motion)
-                        total_identity_loss = losses.standard_total_cycle_loss(identity_fr1, fr1, identity_fr2, fr2)
+                        total_identity_loss = losses.standard_total_cycle_loss(identity_fr1, real_fr1, identity_fr2, real_fr2)
 
                     else:
                         # we compute our custom identity loss
@@ -280,7 +297,7 @@ def train_model(training_dataset_path, testing_dataset_path, num_epoch, batch_si
                         # we compute our custom cycle loss
                         recov_fr1 = G_BA(fake_fr2, estimated_pose_BA)
                         recov_fr2 = G_AB(fake_fr1, estimated_pose_AB)
-                        _, recov_P12 = PaD_B(recov_fr1, recov_fr2)
+                        _, recov_P12 = PaD_A(recov_fr1, recov_fr2)
                         _, recov_P21 = PaD_B(recov_fr2, recov_fr1)
                         total_cycle_loss = losses.custom_total_cycle_loss(recov_fr1, real_fr1, recov_P12, estimated_pose_AB,
                                                                           recov_fr2, real_fr2, recov_P21, estimated_pose_BA,
@@ -317,6 +334,7 @@ def train_model(training_dataset_path, testing_dataset_path, num_epoch, batch_si
         # TODO: FIX RTE AND RRE computation
         rre, rte = losses.relative_pose_error(ground_truth_pose, predictions)
 
+        
         # compute the other metrics
         wandb.log({"testing_loss_G": loss_testing_G_epoch / num_batches,
                    "testing_loss_GAN": loss_testing_GAN_epoch / num_batches,
@@ -328,6 +346,7 @@ def train_model(training_dataset_path, testing_dataset_path, num_epoch, batch_si
                    "RRE": rre,
                    "RTE": rte,
                    })
+        
 
         # Check if the current metrics are the best so far
         saving_path = path_to_the_model + "model.pth"
@@ -335,10 +354,10 @@ def train_model(training_dataset_path, testing_dataset_path, num_epoch, batch_si
                 best_metrics['RRE']:
             best_metrics.update({'ATE': ate, 'ARE': are, 'RTE': rte, 'RRE': rre})
             print("[INFO]: saving the best models")
-            saving_path_gab = path_to_the_model + "model_gen_ab.pth"
-            saving_path_gba = path_to_the_model + "model_gen_ba.pth"
-            saving_path_pada = path_to_the_model + "model_PaD_A.pth"
-            saving_path_padb = path_to_the_model + "model_PaD_B.pth"
+            saving_path_gab = path_to_the_model + id + "_model_gen_ab.pth"
+            saving_path_gba = path_to_the_model + id + "_model_gen_ba.pth"
+            saving_path_pada = path_to_the_model + id + "_model_PaD_A.pth"
+            saving_path_padb = path_to_the_model + id + "_model_PaD_B.pth"
             training_var = {'epoch': epoch,
                             'iter_on_ucbm': i_folder,
                             'ate': ate,
@@ -354,10 +373,10 @@ def train_model(training_dataset_path, testing_dataset_path, num_epoch, batch_si
         else:
             # we save the model as a normal one:
             print("[INFO]: saving the models")
-            saving_path_gab = path_to_the_model + "gen_ab.pth"
-            saving_path_gba = path_to_the_model + "gen_ba.pth"
-            saving_path_pada = path_to_the_model + "PaD_A.pth"
-            saving_path_padb = path_to_the_model + "PaD_B.pth"
+            saving_path_gab = path_to_the_model + id + "_gen_ab.pth"
+            saving_path_gba = path_to_the_model + id + "_gen_ba.pth"
+            saving_path_pada = path_to_the_model + id + "_PaD_A.pth"
+            saving_path_padb = path_to_the_model + id + "_PaD_B.pth"
             training_var = {'epoch': epoch,
                             'iter_on_ucbm': i_folder,
                             'ate': ate,
@@ -383,18 +402,7 @@ path_to_model = "/home/gvide/PycharmProjects/SurgicalSlam/MPEM/Model/"
 # to logout remove key here /cephyr/users/soda/Alvis/.netrc
 
 
-wandb.init(
-    project="Pose Estimator",
 
-    config={
-        "learning_rate": 0.001,
-        "architecture": "CycleGan",
-        "dataset": "Kitti",
-        "epoch": 200,
-        "standard": True,
-        "weights": "[0.5, 0.5, 0.5, 0.5]"
-    }
-)
 
 
 parser = argparse.ArgumentParser(description="Train a model with specified parameters")
@@ -412,6 +420,7 @@ parser.add_argument("--input_shape", type=int, nargs=3, default=[3, 256, 256], h
 parser.add_argument("--standard", type=bool, default=False, help="Standard flag (default: False)")
 parser.add_argument("--weigths_id_loss", nargs='*', type=float)
 parser.add_argument("--weigths_cycle_loss", nargs='*', type=float)
+parser.add_argument("--id", type=str)
 
 args = parser.parse_args()
 
@@ -425,8 +434,12 @@ train_model(
     num_worker=args.num_worker,
     lr=args.lr,
     input_shape=tuple(args.input_shape),
-    standard=args.standard
+    standard=args.standard,
+    weights_cycle_loss=args.weigths_cycle_loss,
+    weights_identity_loss=args.weigths_id_loss,
+    id=args.id,
 )
+
 
 
 
