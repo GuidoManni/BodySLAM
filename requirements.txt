@@ -15,5 +15,8 @@ scipy
 # IO-lib
 openpyxl
 
+# Other
+tqdm
+
 
 
