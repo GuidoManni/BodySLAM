@@ -41,8 +41,11 @@ modelIO = ModelIO()
 
 def train_model(training_dataset_path, testing_dataset_path, num_epoch, batch_size,
                 path_to_the_model, load_model = False, num_worker = 10, lr = 0.0002, input_shape = (3, 256, 256),
-                standard = False, weights_cycle_loss = [0.5, 0.5, 0.5, 0.5],
+                standard_cycle = False, standard_identity = False, weights_cycle_loss = [0.5, 0.5, 0.5, 0.5],
                 weights_identity_loss = [0.5, 0.5, 0.5, 0.5], id = "0"):
+
+    print(weights_cycle_loss)
+    print(weights_identity_loss)
     
     wandb.init(
         project="Pose Estimator",
@@ -138,7 +141,7 @@ def train_model(training_dataset_path, testing_dataset_path, num_epoch, batch_si
             # Identity Loss
             identity_motion = torch.zeros(estimated_pose_AB.shape[0], estimated_pose_AB.shape[1]).to(DEVICE)
 
-            if standard:
+            if standard_identity:
                 # we compute the standard identity loss of the cyclegan
                 identity_fr1 = G_BA(real_fr1, identity_motion)
                 identity_fr2 = G_AB(real_fr2, identity_motion)
@@ -159,7 +162,7 @@ def train_model(training_dataset_path, testing_dataset_path, num_epoch, batch_si
             loss_GAN = losses.standard_total_GAN_loss(PaD_B(curr_frame = fake_fr2), valid, PaD_A(curr_frame = fake_fr1), valid)
 
             # Cycle loss
-            if standard:
+            if standard_cycle:
                 # we compute the standard cycle loss of the cyclegan
                 recov_fr1 = G_BA(fake_fr2, estimated_pose_BA)
                 recov_fr2 = G_AB(fake_fr1, estimated_pose_AB)
@@ -263,7 +266,7 @@ def train_model(training_dataset_path, testing_dataset_path, num_epoch, batch_si
                     # Identity Loss
                     identity_motion = torch.zeros(estimated_pose_AB.shape[0], estimated_pose_AB.shape[1]).to(DEVICE)
 
-                    if standard:
+                    if standard_identity:
                         # we compute the standard identity loss of the cyclegan
                         identity_fr1 = G_BA(real_fr1, identity_motion)
                         identity_fr2 = G_AB(real_fr2, identity_motion)
@@ -288,7 +291,7 @@ def train_model(training_dataset_path, testing_dataset_path, num_epoch, batch_si
                                                               valid)
 
                     # Cycle loss
-                    if standard:
+                    if standard_cycle:
                         # we compute the standard cycle loss of the cyclegan
                         recov_fr1 = G_BA(fake_fr2, estimated_pose_BA)
                         recov_fr2 = G_AB(fake_fr1, estimated_pose_AB)
@@ -417,7 +420,8 @@ parser.add_argument("--load_model", type=bool, help="Flag to indicate whether to
 parser.add_argument("--num_worker", type=int, default=10, help="Number of workers (default: 10)")
 parser.add_argument("--lr", type=float, default=0.0002, help="Learning rate (default: 0.0002)")
 parser.add_argument("--input_shape", type=int, nargs=3, default=[3, 256, 256], help="Input shape as a list (default: [3, 256, 256])")
-parser.add_argument("--standard", type=bool, default=False, help="Standard flag (default: False)")
+parser.add_argument("--standard_cycle", type=bool, default=False, help="Standard flag (default: False)")
+parser.add_argument("--standard_identity", type=bool, default=False, help="Standard flag (default: False)")
 parser.add_argument("--weigths_id_loss", nargs='*', type=float)
 parser.add_argument("--weigths_cycle_loss", nargs='*', type=float)
 parser.add_argument("--id", type=str)
@@ -434,7 +438,8 @@ train_model(
     num_worker=args.num_worker,
     lr=args.lr,
     input_shape=tuple(args.input_shape),
-    standard=args.standard,
+    standard_cycle=args.standard_cycle,
+    standard_identity=args.standard_identity,
     weights_cycle_loss=args.weigths_cycle_loss,
     weights_identity_loss=args.weigths_id_loss,
     id=args.id,
