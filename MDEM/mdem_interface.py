@@ -19,6 +19,7 @@ class MDEMInterface:
     def __init__(self, model_type = "ZoeD_NK"):
         # when we initialize this class the model will be initialized
         self.zoe = self._initialize_ZOE(model_type)
+        self.frameIO = FrameIO()
 
     def _initialize_ZOE(self, model_type):
         # It is recommended to fetch the latest MiDaS repo via torch hub before proceeding
@@ -54,7 +55,7 @@ class MDEMInterface:
         '''
 
         # step 1: we load the frame
-        image = FrameIO.load_p_img(path_to_frame, convert_to_rgb=True)
+        image = self.frameIO.load_p_img(path_to_frame, convert_to_rgb=True)
 
         # step 2: we infer the depth map
         depth_map = self.zoe.infer_pil(image, output_type = "pil") # as 16 bit PIL Image
@@ -72,7 +73,7 @@ class MDEMInterface:
 
         '''
 
-        FrameIO.save_p_img(image, saving_path, extension)
+        self.frameIO.save_p_img(image, saving_path, extension)
 
     def debug(self, path_to_frame, saving_path):
         '''
