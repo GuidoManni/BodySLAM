@@ -42,23 +42,31 @@ modelIO = ModelIO()
 def train_model(training_dataset_path, testing_dataset_path, num_epoch, batch_size,
                 path_to_the_model, load_model = False, num_worker = 10, lr = 0.0002, input_shape = (3, 256, 256),
                 standard_cycle = False, standard_identity = False, weights_cycle_loss = [0.5, 0.5, 0.5, 0.5],
-                weights_identity_loss = [0.5, 0.5, 0.5, 0.5], id = "0"):
+                weights_identity_loss = [0.5, 0.5, 0.5, 0.5], id = "0", id_wandb_run = ''):
 
     print(weights_cycle_loss)
     print(weights_identity_loss)
-    
-    wandb.init(
-        project="Pose Estimator",
 
-        config={
-            "learning_rate": 0.001,
-            "architecture": "CycleGan",
-            "dataset": "Kitti",
-            "epoch": 200,
-            "standard": True,
-            "weights": "[0.5, 0.5, 0.5, 0.5]"
-        }
-    )
+    if load_model:
+        # we resume the run
+        wandb.init(project="Pose Estimator", id=id_wandb_run, resume='must')  # id 1
+
+    else:
+        # we start a new run
+        wandb.init(
+            project="Pose Estimator",
+
+            config={
+                "learning_rate": 0.001,
+                "architecture": "CycleGan",
+                "dataset": "Kitti",
+                "epoch": 200,
+                "standard": True,
+                "weights": "[0.5, 0.5, 0.5, 0.5]"
+            }
+        )
+
+
     
     # step 0: detect the DEVICE
     #DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
@@ -89,10 +97,10 @@ def train_model(training_dataset_path, testing_dataset_path, num_epoch, batch_si
 
     # step 5: we load the model (if we need to load it)
     if load_model:
-        path_to_G_AB = path_to_the_model + "G_AB.pth"
-        path_to_G_BA = path_to_the_model + "G_BA.pth"
-        path_to_PaD_A = path_to_the_model + "PaD_A.pth"
-        path_to_PaD_B = path_to_the_model + "PaD_B.pth"
+        path_to_G_AB = path_to_the_model + id + "_gen_ab.pth"
+        path_to_G_BA = path_to_the_model + id + "_gen_ba.pth"
+        path_to_PaD_A = path_to_the_model + id + "_PaD_A.pth"
+        path_to_PaD_B = path_to_the_model + id + "_PaD_B.pth"
 
         # load G_AB
         G_AB, _, training_var = modelIO.load_pose_model(path_to_G_AB, G_AB, optimizer_G)
@@ -425,6 +433,7 @@ parser.add_argument("--standard_identity", type=bool, default=False, help="Stand
 parser.add_argument("--weigths_id_loss", nargs='*', type=float)
 parser.add_argument("--weigths_cycle_loss", nargs='*', type=float)
 parser.add_argument("--id", type=str)
+parser.add_argument("--id_wandb_run", type=str)
 
 args = parser.parse_args()
 
@@ -443,6 +452,7 @@ train_model(
     weights_cycle_loss=args.weigths_cycle_loss,
     weights_identity_loss=args.weigths_id_loss,
     id=args.id,
+    id_wandb_run=args.id_wandb_run
 )
 
 
