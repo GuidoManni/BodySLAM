@@ -180,7 +180,10 @@ class ModelIO:
 
         training_var = {'epoch': checkpoint['epoch'],
                         'iter_on_ucbm': checkpoint['iter_on_ucbm'],
-                        'best_loss': checkpoint['loss']}
+                        'ate': checkpoint['ate'],
+                        'are': checkpoint['are'],
+                        'rte': checkpoint['rte'],
+                        'rre': checkpoint['rre']}
         return model, optimizer, training_var
 
     def save_pose_model(self, saving_path, model, optimizer, training_var, best_model):
@@ -196,7 +199,9 @@ class ModelIO:
         '''
 
         if best_model:
-            saving_path = saving_path.replace("model", "best_model")
+            curr_name = saving_path.split("/")[-1]
+            new_name = curr_name.replace("model", "best_model")
+            saving_path = saving_path.replace(curr_name, new_name)
         torch.save({
             'epoch': training_var['epoch'],
             'iter_on_ucbm': training_var['iter_on_ucbm'],
