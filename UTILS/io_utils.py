@@ -9,6 +9,8 @@ Provide the function used to load and save images, files, etc...
 '''
 # Python standard-lib
 import warnings
+import csv
+import os
 
 # Computer Vision lib
 from PIL import Image
@@ -115,6 +117,17 @@ class FrameIO:
             print(f"Error while saving: {e}")
 
 
+    def load_cv2_depth(self, path_to_depth):
+        '''
+        This function load a depth map using opencv
+        :param path_to_depth: path to the depth map
+        :return: depth map
+        '''
+        depth_map = cv2.imread(path_to_depth, cv2.IMREAD_ANYDEPTH)
+
+        return depth_map
+
+
 
 class XlsxIO:
     def read_xlsx_pose_file(self, filepath, convert_to_se3 = False):
@@ -214,6 +227,159 @@ class ModelIO:
         }, saving_path)
 
 
+class CSVIO:
+    def write_metrics_on_cvs(self, saving_path, metrics):
+        headers = []
+        if 'avg' in saving_path:
+            for keys in metrics.keys():
+                headers.append(keys)
+
+            with open(saving_path, 'w', newline='') as csvfile:
+                writer = csv.DictWriter(csvfile, fieldnames=headers)
+                writer.writeheader()
+                writer.writerow(metrics)
+        else:
+            for keys in metrics[0].keys():
+                headers.append(keys)
+
+            with open(saving_path, 'w', newline='') as csvfile:
+                writer = csv.DictWriter(csvfile, fieldnames=headers)
+                writer.writeheader()
+                for i in range(len(metrics)):
+                    writer.writerow(metrics[i])
 
 
 
+
+class DatasetLoader:
+    def read_Hamlyn(self, path_to_Hamlyn):
+        '''
+        This function obtain the full relative path of all the images.
+        :param path_to_Hamlyn: path to the dataset
+        :return: dict_of_path
+        '''
+        '''
+        To use this function the directory must follow this structure!
+        Directory Structure:
+        Hamlyn
+        -> rectified01
+            -> image01
+            -> image02
+            -> depth01
+            -> depth02
+        ...
+        -> rectified27
+        '''
+
+        dataset_paths = {}
+
+        # step 1: we read the content of the root folder
+        hamlyn_root_content = os.listdir(path_to_Hamlyn)
+        print("[INFO]: found the following content in the folder provided")
+        print(hamlyn_root_content)
+
+        # step 2: we remove in the list any eventual folder that is not "rectified"
+        print("[INFO]: removing any folder that is not 'rectified'")
+        hamlyn_root_content_path = []
+        for i in range(len(hamlyn_root_content)):
+            if "rectified" in hamlyn_root_content[i]:
+                hamlyn_root_content_path.append(os.path.join(path_to_Hamlyn, hamlyn_root_content[i]))
+        hamlyn_root_content_path = sorted(hamlyn_root_content_path)
+
+        # step 3: we extract the depth & images
+        for i in range(len(hamlyn_root_content_path)):
+            rectified_content = os.listdir(hamlyn_root_content_path[i])
+            folder_name = hamlyn_root_content_path[i].split("/")[-1]
+            print(f"[INFO]: loading file from {hamlyn_root_content_path[i]}")
+            rectified_content_dict = {}
+            for j in range(len(rectified_content)):
+                list_content = []
+                if rectified_content[j] == "depth01":
+                    tmp = os.listdir(os.path.join(hamlyn_root_content_path[i], rectified_content[j]))
+                    for elem in tmp:
+                        if '.png' in elem:
+                            list_content.append(os.path.join(hamlyn_root_content_path[i], rectified_content[j], elem))
+                    rectified_content_dict["depth01"] = sorted(list_content)
+
+                elif rectified_content[j] == "depth02":
+                    tmp = os.listdir(os.path.join(hamlyn_root_content_path[i], rectified_content[j]))
+                    for elem in tmp:
+                        if '.png' in elem:
+                            list_content.append(os.path.join(hamlyn_root_content_path[i], rectified_content[j], elem))
+                    rectified_content_dict["depth02"] = sorted(list_content)
+
+                elif rectified_content[j] == "image01":
+                    tmp = os.listdir(os.path.join(hamlyn_root_content_path[i], rectified_content[j]))
+                    for elem in tmp:
+                        if '.jpg' in elem:
+                            list_content.append(os.path.join(hamlyn_root_content_path[i], rectified_content[j], elem))
+                    rectified_content_dict["image01"] = sorted(list_content)
+                elif rectified_content[j] == "image02":
+                    tmp = os.listdir(os.path.join(hamlyn_root_content_path[i], rectified_content[j]))
+                    for elem in tmp:
+                        if '.png' in elem:
+                            list_content.append(os.path.join(hamlyn_root_content_path[i], rectified_content[j], elem))
+                    rectified_content_dict["image02"] = sorted(list_content)
+
+                dataset_paths[folder_name] = rectified_content_dict
+
+        return dataset_paths
+
+    def read_EndoSlam(self, path_to_EndoSlam):
+        '''
+        This function read the EndoSlam dataset
+        :param path_to_EndoSlam:
+        :return: dict of paths
+        '''
+
+        '''
+        This function works only with the standard folder architecture of EndoSlam
+        EndoSlam
+        -> 3D Scanners
+        -> Cameras
+        -> OlympusCam
+        -> UnityCam
+            -> Calibration
+            -> Colon
+                -> Frames
+                -> Pixelwise Depths
+                -> Poses
+            -> Small Intestine
+                -> Frames
+                -> Pixelwise Depths
+                -> Poses
+            -> Stomach
+                -> Frames
+                -> Pixelwise Depths
+                -> Poses
+        '''
+        FOLDERS = ['Frames', 'Pixelwise Depths']
+        dataset_paths = {}
+
+        # step 1: navigate to UnityCam
+        if "UnityCam" not in path_to_EndoSlam:
+            # if the folder is not in the path we need to add it
+            path_to_EndoSlam = os.path.join(path_to_EndoSlam, "UnityCam")
+
+        # step 2: get the root content of the UnityCam and build the relative path
+        content_unitycam = os.listdir(path_to_EndoSlam)
+        path_to_content_unitycam = []
+        for file in content_unitycam:
+            if file != "Calibration":  # we add only the folders of interest
+                path_to_content_unitycam.append(os.path.join(path_to_EndoSlam, file))
+
+        # step 3: now we get the full relative path of all the content inside UnityCam
+        for i in range(len(path_to_content_unitycam)):
+            dict_key = path_to_content_unitycam[i].split("/")[-1]
+            path_inside_folder = {}
+            for folder in FOLDERS:
+                paths = []
+                intermediate_path = os.path.join(path_to_content_unitycam[i], folder)
+                content_folder = sorted(os.listdir(intermediate_path))
+                for content in content_folder:
+                    path = os.path.join(intermediate_path, content)
+                    paths.append(path)
+                path_inside_folder[folder] = paths
+            dataset_paths[dict_key] = path_inside_folder
+
+        return dataset_paths
