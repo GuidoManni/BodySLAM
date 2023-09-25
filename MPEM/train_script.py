@@ -14,7 +14,6 @@ import itertools
 import argparse
 from tqdm import tqdm
 
-
 # Numerical lib
 import numpy as np
 
@@ -35,21 +34,44 @@ from architecture import MultiTaskModel, ConditionalGenerator
 from training_utils import TrainingLoss
 from UTILS.io_utils import ModelIO
 from dataloader import DatasetsIO
+from UTILS.geometry_utils import PoseOperator
+
 
 datasetIO = DatasetsIO()
 modelIO = ModelIO()
+poseOperator = PoseOperator()
+
+def check_value(value):
+    assert value == 1 or value == 0, "value must be 0 or 1"
+    if value == 1:
+        return True
+    elif value == 0:
+        return False
+
 
 def train_model(training_dataset_path, testing_dataset_path, num_epoch, batch_size,
-                path_to_the_model, load_model = False, num_worker = 10, lr = 0.0002, input_shape = (3, 256, 256),
-                standard_cycle = False, standard_identity = False, weights_cycle_loss = [0.5, 0.5, 0.5, 0.5],
+                path_to_the_model, load_model, standard_cycle, standard_identity,
+                num_worker = 10, lr = 0.0002, input_shape = (3, 256, 256), weights_cycle_loss = [0.5, 0.5, 0.5, 0.5],
                 weights_identity_loss = [0.5, 0.5, 0.5, 0.5], id = "0", id_wandb_run = ''):
 
-    print(weights_cycle_loss)
-    print(weights_identity_loss)
+    load_model = check_value(load_model)
+    standard_cycle = check_value(standard_cycle)
+    standard_identity = check_value(standard_identity)
+
+    print(f"Num Epoch: {num_epoch}")
+    print(f"Batch Size: {batch_size}")
+    print(f"standard_cycle: {standard_cycle}")
+    print(f"standard_identity: {standard_identity}")
+    print(f"Load Model: {load_model}")
+    print(f"weights_cycle_loss: {weights_cycle_loss}")
+    print(f"weights_identity_loss: {weights_identity_loss}")
+    print(f"id: {id}")
+    print(f"wandb id run: {id_wandb_run}")
 
     if load_model:
         # we resume the run
-        wandb.init(project="Pose Estimator", id=id_wandb_run, resume='must')  # id 1
+        #wandb.init(project="Pose Estimator", id=id_wandb_run, resume='must')  # id 1
+        pass
 
     else:
         # we start a new run
@@ -59,8 +81,7 @@ def train_model(training_dataset_path, testing_dataset_path, num_epoch, batch_si
             config={
                 "learning_rate": 0.001,
                 "architecture": "CycleGan",
-                "dataset": "Kitti",
-                "epoch": 200,
+                "epoch": 500,
                 "standard": True,
                 "weights": "[0.5, 0.5, 0.5, 0.5]"
             }
@@ -150,12 +171,14 @@ def train_model(training_dataset_path, testing_dataset_path, num_epoch, batch_si
             identity_motion = torch.zeros(estimated_pose_AB.shape[0], estimated_pose_AB.shape[1]).to(DEVICE)
 
             if standard_identity:
+                print("standard_id")
                 # we compute the standard identity loss of the cyclegan
                 identity_fr1 = G_BA(real_fr1, identity_motion)
                 identity_fr2 = G_AB(real_fr2, identity_motion)
                 total_identity_loss = losses.standard_total_cycle_loss(identity_fr1, real_fr1, identity_fr2, real_fr2)
 
             else:
+                print("not standard_id")
                 # we compute our custom identity loss
                 identity_fr1 = G_BA(real_fr1, identity_motion)
                 identity_fr2 = G_AB(real_fr2, identity_motion)
@@ -171,11 +194,13 @@ def train_model(training_dataset_path, testing_dataset_path, num_epoch, batch_si
 
             # Cycle loss
             if standard_cycle:
+                print("standard_cycle")
                 # we compute the standard cycle loss of the cyclegan
                 recov_fr1 = G_BA(fake_fr2, estimated_pose_BA)
                 recov_fr2 = G_AB(fake_fr1, estimated_pose_AB)
                 total_cycle_loss = losses.standard_total_cycle_loss(recov_fr1, real_fr1, recov_fr2, real_fr2)
             else:
+                print("not standard_cycle")
                 # we compute our custom cycle loss
                 recov_fr1 = G_BA(fake_fr2, estimated_pose_BA)
                 recov_fr2 = G_AB(fake_fr1, estimated_pose_AB)
@@ -234,14 +259,19 @@ def train_model(training_dataset_path, testing_dataset_path, num_epoch, batch_si
         loss_testing_D_epoch = 0.0
         loss_testing_cycle_epoch = 0.0
         num_batches = 0
+        count = 0
 
         ground_truth_pose = []
         predictions = []
+        ATE = []
+        ARE = []
+        RRE = []
+        RTE = []
 
         print("[INFO]: evaluating the model...")
         print(testing_root_content)
         for i in range(len(testing_root_content)):
-            testing_loader = datasetIO.endoslam_dataloader(testing_root_content, batch_size=batch_size, num_worker=num_worker, i=i)
+            testing_loader = datasetIO.endoslam_dataloader(testing_root_content, batch_size=1, num_worker=num_worker, i=i)
 
             G_AB.eval()
             G_BA.eval()
@@ -268,8 +298,8 @@ def train_model(training_dataset_path, testing_dataset_path, num_epoch, batch_si
                     estimated_pose_BA_SE3, estimated_pose_BA = PaD_A(real_fr2, real_fr1)
 
 
-                    gt.append(target.cpu().numpy())
-                    pd.append(estimated_pose_AB_SE3.cpu().numpy())
+                    gt.append(target.squeeze().cpu().numpy())
+                    pd.append(estimated_pose_AB_SE3.squeeze().cpu().numpy())
 
                     # Identity Loss
                     identity_motion = torch.zeros(estimated_pose_AB.shape[0], estimated_pose_AB.shape[1]).to(DEVICE)
@@ -333,17 +363,48 @@ def train_model(training_dataset_path, testing_dataset_path, num_epoch, batch_si
 
                     num_batches += 1
 
-            ground_truth_pose.append(gt)
-            predictions.append(pd)
+            # before computing ATE and ARE
+            absolute_predictions = poseOperator.integrate_relative_poses(pd)
+
+            relative_ground_truth = poseOperator.get_relative_poses(gt)
+
+            # compute ATE and ARE
+            #ate, are = losses.absolute_pose_error(gt, absolute_predictions)
+            ate, are = losses.compute_ARE_and_ATE(gt, absolute_predictions)
+
+            # compute RTE and RRE
+            #rre, rte = losses.relative_pose_error(relative_ground_truth, pd)
+            rre, rte = losses.compute_RRE_and_RTE(relative_ground_truth, predictions)
+
+            ATE.append(ate)
+            ARE.append(are)
+            RRE.append(rre)
+            RTE.append(rte)
+
+        '''
+        # before computing ATE and ARE
+        absolute_predictions = poseOperator.integrate_relative_poses(predictions)
+
+        relative_ground_truth = poseOperator.get_relative_poses(ground_truth_pose)
 
 
 
         # compute ATE and ARE
-        ate, are = losses.absolute_pose_error(ground_truth_pose, predictions)
+        ate, are = losses.absolute_pose_error(ground_truth_pose, absolute_predictions)
 
         # compute RTE and RRE
-        # TODO: FIX RTE AND RRE computation
-        rre, rte = losses.relative_pose_error(ground_truth_pose, predictions)
+        rre, rte = losses.relative_pose_error(relative_ground_truth, predictions)
+        '''
+        ate = 0.0
+        are = 0.0
+        rre = 0.0
+        rte = 0.0
+        num_dataset = len(ATE)
+        for i in range(num_dataset):
+            ate += ATE[i]
+            are += ARE[i]
+            rre += RTE[i]
+            rte += RTE[i]
 
         
         # compute the other metrics
@@ -352,10 +413,10 @@ def train_model(training_dataset_path, testing_dataset_path, num_epoch, batch_si
                    "testing_loss_D": loss_testing_D_epoch / num_batches,
                    "testing_loss_cycle": loss_testing_cycle_epoch / num_batches,
                    "testing_loss_identity": loss_testing_identity_epoch / num_batches,
-                   "ATE": ate,
-                   "ARE": are,
-                   "RRE": rre,
-                   "RTE": rte,
+                   "ATE": ate/num_dataset,
+                   "ARE": are/num_dataset,
+                   "RRE": rre/num_dataset,
+                   "RTE": rte/num_dataset,
                    })
         
 
@@ -423,13 +484,13 @@ parser.add_argument("--testing_dataset_path", type=str, help="Path to the testin
 parser.add_argument("--num_epoch", type=int, help="Number of epochs for training")
 parser.add_argument("--batch_size", type=int, help="Batch size for training")
 parser.add_argument("--path_to_the_model", type=str, help="Path to save the trained model")
-parser.add_argument("--load_model", type=bool, help="Flag to indicate whether to load a pre-trained model")
+parser.add_argument("--load_model", type=int, help="Flag to indicate whether to load a pre-trained model")
 
 parser.add_argument("--num_worker", type=int, default=10, help="Number of workers (default: 10)")
 parser.add_argument("--lr", type=float, default=0.0002, help="Learning rate (default: 0.0002)")
 parser.add_argument("--input_shape", type=int, nargs=3, default=[3, 256, 256], help="Input shape as a list (default: [3, 256, 256])")
-parser.add_argument("--standard_cycle", type=bool, default=False, help="Standard flag (default: False)")
-parser.add_argument("--standard_identity", type=bool, default=False, help="Standard flag (default: False)")
+parser.add_argument("--standard_cycle", type=int, help="Standard flag (default: False)")
+parser.add_argument("--standard_identity", type=int, help="Standard flag (default: False)")
 parser.add_argument("--weigths_id_loss", nargs='*', type=float)
 parser.add_argument("--weigths_cycle_loss", nargs='*', type=float)
 parser.add_argument("--id", type=str)

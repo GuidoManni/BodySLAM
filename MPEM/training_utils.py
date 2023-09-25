@@ -297,6 +297,88 @@ class TrainingLoss:
 
         return rre, rte
 
+    def compute_ARE_and_ATE(self, ground_truth, predictions):
+        """
+        Computes the ATE and ARE.
+
+        Parameters:
+        ground_truth: List of numpy arrays representing the ground truth poses.
+        predictions: List of numpy arrays representing the predicted poses.
+
+        Returns:
+        ate: Absolute Trajectory Error
+        are: Absolute Rotation Error
+        """
+        assert len(ground_truth) == len(predictions), "Ground truth and predictions must have the same length"
+
+        ate_sum = 0.0
+        are_sum = 0.0
+
+        for gt, pred in zip(ground_truth, predictions):
+            # Ensure the pose matrices are 4x4 (assuming they are homogeneous matrices)
+            assert gt.shape == (4, 4) and pred.shape == (4, 4), "Poses should be 4x4 matrices"
+
+            # Compute translational error
+            trans_diff = gt[:3, 3] - pred[:3, 3]
+            ate_sum += np.linalg.norm(trans_diff)
+
+            # Compute rotational error
+            R_diff = np.dot(gt[:3, :3], pred[:3, :3].T)
+            trace = np.trace(R_diff)
+            angular_error_rad = np.arccos(max(min((trace - 1) / 2, 1), -1))
+            are_sum += angular_error_rad
+
+        ATE = ate_sum / len(ground_truth)
+        ARE = are_sum / len(ground_truth)
+
+        return ATE, ARE
+
+    1363072
+
+    def compute_RRE_and_RTE(self, ground_truth, predictions, delta=1):
+        """
+        Compute the RRE and RTE for a list of poses.
+
+        Args:
+        - ground_truth: List of numpy arrays representing the ground truth poses.
+        - predictions: List of numpy arrays representing the predicted poses.
+        - delta: Time difference for relative pose computations.
+
+        Returns:
+        - RRE: Relative Rotation Error.
+        - RTE: Relative Trajectory Error.
+        """
+
+        assert len(ground_truth) == len(predictions), "Ground truth and predictions must have the same length"
+
+        rre_sum = 0.0
+        rte_sum = 0.0
+        count = 0
+
+        for i in range(len(ground_truth) - delta):
+            gt_rel = np.dot(np.linalg.inv(ground_truth[i]), ground_truth[i + delta])
+            pred_rel = np.dot(np.linalg.inv(predictions[i]), predictions[i + delta])
+
+            # Ensure the pose matrices are 4x4 (assuming they are homogeneous matrices)
+            assert gt_rel.shape == (4, 4) and pred_rel.shape == (4, 4), "Relative poses should be 4x4 matrices"
+
+            # Compute translational error for relative pose
+            trans_diff = gt_rel[:3, 3] - pred_rel[:3, 3]
+            rte_sum += np.linalg.norm(trans_diff)
+
+            # Compute rotational error for relative pose
+            R_diff = np.dot(gt_rel[:3, :3], pred_rel[:3, :3].T)
+            trace = np.trace(R_diff)
+            angular_error_rad = np.arccos(max(min((trace - 1) / 2, 1), -1))
+            rre_sum += angular_error_rad
+
+            count += 1
+
+        RRE = rre_sum / count
+        RTE = rte_sum / count
+
+        return RRE, RTE
+
 
 
 
