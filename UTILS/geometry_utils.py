@@ -104,3 +104,74 @@ class LieEuclideanMapper:
 
         return torch.stack(rotation_matrices)
 
+
+class PoseOperator:
+    def integrate_relative_poses_batch(self, relative_poses_batch, initial_pose=None):
+        """
+        Convert batches of lists of relative poses to batches of lists of absolute poses.
+
+        :param relative_poses_batch: List of lists of numpy arrays representing the relative poses.
+        :param initial_pose: Numpy array representing the initial absolute pose (typically an identity matrix).
+
+        :return: List of lists of numpy arrays representing the integrated absolute poses.
+        """
+        if initial_pose is None:
+            initial_pose = np.eye(4)
+
+        all_absolute_poses = []
+        for relative_poses in relative_poses_batch:
+            absolute_poses = self.integrate_relative_poses(relative_poses)
+            all_absolute_poses.append(absolute_poses)
+
+        return all_absolute_poses
+    def integrate_relative_poses(self, relative_poses, initial_pose = np.eye(4)):
+        """
+        Convert a list of relative poses to absolute poses.
+        :param initial_pose: Numpy array representing the initial absolute pose (typically an identity matrix).
+        :param relative_poses: List of numpy arrays representing the relative poses.
+
+        :return: List of numpy arrays representing the integrated absolute poses.
+        """
+        absolute_poses = [initial_pose]
+        current_pose = initial_pose
+
+        for rel_pose in relative_poses:
+            current_pose = np.dot(current_pose, rel_pose)
+            absolute_poses.append(current_pose)
+
+        return absolute_poses
+
+    def get_relative_poses_batch(self, absolute_poses_batch):
+        """
+        Computes relative poses from batches of lists of absolute poses.
+
+        :param absolute_poses_batch: List of lists of absolute poses.
+        Each inner list represents a sequence of 4x4 numpy arrays representing absolute poses.
+
+        :return: List of lists of relative poses. Each inner list contains 4x4 numpy arrays.
+        """
+        all_relative_poses = []
+        for absolute_poses in absolute_poses_batch:
+            relative_poses = self.get_relative_poses(absolute_poses)
+            all_relative_poses.append(relative_poses)
+
+        return all_relative_poses
+
+    def get_relative_poses(self, absolute_poses):
+        """
+        Computes relative poses from a list of absolute poses.
+        :param absolute_poses: List of absolute poses, where each pose is a 4x4 numpy array.
+        :return: List of relative poses as 4x4 numpy arrays.
+        """
+        # Initialize an empty list to store relative poses
+        relative_poses = []
+
+        # Loop over the list of absolute poses and compute relative poses
+        for i in range(len(absolute_poses) - 1):
+            A = absolute_poses[i]
+            B = absolute_poses[i + 1]
+            A_inv = np.linalg.inv(A)
+            R = np.dot(A_inv, B)
+            relative_poses.append(R)
+
+        return relative_poses
