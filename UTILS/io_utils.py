@@ -172,7 +172,7 @@ class XlsxIO:
         return motion_matrices
 
 class ModelIO:
-    def load_pose_model(self, path_to_the_model, model, optimizer):
+    def load_pose_model(self, path_to_the_model, model, optimizer = None):
         '''
         This function load the pose model.
 
@@ -189,7 +189,8 @@ class ModelIO:
 
         checkpoint = torch.load(path_to_the_model)
         model.load_state_dict(checkpoint['model_state_dict'])
-        optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
+        if optimizer is not None:
+            optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
 
         training_var = {'epoch': checkpoint['epoch'],
                         'iter_on_ucbm': checkpoint['iter_on_ucbm'],
@@ -197,6 +198,7 @@ class ModelIO:
                         'are': checkpoint['are'],
                         'rte': checkpoint['rte'],
                         'rre': checkpoint['rre']}
+
         return model, optimizer, training_var
 
     def save_pose_model(self, saving_path, model, optimizer, training_var, best_model):
