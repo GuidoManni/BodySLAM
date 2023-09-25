@@ -309,6 +309,8 @@ class TrainingLoss:
         ate: Absolute Trajectory Error
         are: Absolute Rotation Error
         """
+        print(f"ground_truth: {len(ground_truth)}")
+        print(f"predictions: {len(predictions)}")
         assert len(ground_truth) == len(predictions), "Ground truth and predictions must have the same length"
 
         ate_sum = 0.0

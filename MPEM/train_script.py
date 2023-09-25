@@ -364,17 +364,19 @@ def train_model(training_dataset_path, testing_dataset_path, num_epoch, batch_si
                     num_batches += 1
 
             # before computing ATE and ARE
+            print(f"pd: {len(pd)}")
+            print(f"gt: {len(gt)}")
+            print(pd)
+            absolute_ground_truth = poseOperator.integrate_relative_poses(gt)
             absolute_predictions = poseOperator.integrate_relative_poses(pd)
-
-            relative_ground_truth = poseOperator.get_relative_poses(gt)
 
             # compute ATE and ARE
             #ate, are = losses.absolute_pose_error(gt, absolute_predictions)
-            ate, are = losses.compute_ARE_and_ATE(gt, absolute_predictions)
+            ate, are = losses.compute_ARE_and_ATE(absolute_ground_truth, absolute_predictions)
 
             # compute RTE and RRE
             #rre, rte = losses.relative_pose_error(relative_ground_truth, pd)
-            rre, rte = losses.compute_RRE_and_RTE(relative_ground_truth, predictions)
+            rre, rte = losses.compute_RRE_and_RTE(gt, pd)
 
             ATE.append(ate)
             ARE.append(are)

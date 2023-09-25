@@ -132,12 +132,17 @@ class PoseOperator:
 
         :return: List of numpy arrays representing the integrated absolute poses.
         """
-        absolute_poses = [initial_pose]
-        current_pose = initial_pose
+        if not relative_poses:
+            return []
+
+        current_absolute_pose = initial_pose  # Initialize with identity
+        absolute_poses = []
+
 
         for rel_pose in relative_poses:
-            current_pose = np.dot(current_pose, rel_pose)
-            absolute_poses.append(current_pose)
+            current_absolute_pose = np.dot(current_absolute_pose, rel_pose)
+            absolute_poses.append(current_absolute_pose)
+        
 
         return absolute_poses
 
