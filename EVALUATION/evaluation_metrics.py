@@ -122,82 +122,83 @@ class MPEM_Metrics:
     def __init__(self):
         pass
 
-    def absolute_pose_error(self, ground_truths, estimates):
+    def absolute_pose_error(self, ground_truth, predictions):
         """
         Computes the ATE and ARE.
 
         Parameters:
-        ground_truths: list of list of numpy arrays containing ground truth poses ([batch, 4, 4])
-        estimates: list of list of numpy arrays containing estimated poses ([batch, 4, 4])
+        ground_truth: List of numpy arrays representing the ground truth poses.
+        predictions: List of numpy arrays representing the predicted poses.
 
         Returns:
         ate: Absolute Trajectory Error
         are: Absolute Rotation Error
         """
-        ate_values = []
-        are_values = []
+        assert len(ground_truth) == len(predictions), "Ground truth and predictions must have the same length"
 
-        for batch_gt, batch_est in zip(ground_truths, estimates):
-            for gt, est in zip(batch_gt[0], batch_est[0]):
-                # Ensure gt and est are 2D arrays with shape [4, 4]
-                gt = np.reshape(gt, (4, 4))
-                est = np.reshape(est, (4, 4))
+        ate_sum = 0.0
+        are_sum = 0.0
 
-                # Compute the translational error (Euclidean distance between translation parts)
-                trans_error = np.linalg.norm(gt[:3, 3] - est[:3, 3])
-                ate_values.append(trans_error)
+        for gt, pred in zip(ground_truth, predictions):
+            # Ensure the pose matrices are 4x4 (assuming they are homogeneous matrices)
+            assert gt.shape == (4, 4) and pred.shape == (4, 4), "Poses should be 4x4 matrices"
 
-                # Compute the rotational error (angle between rotation matrices)
-                R_diff = np.dot(gt[:3, :3], est[:3, :3].T)
-                angle_diff = np.arccos((np.trace(R_diff) - 1) / 2)
-                are_values.append(angle_diff)
+            # Compute translational error
+            trans_diff = gt[:3, 3] - pred[:3, 3]
+            ate_sum += np.linalg.norm(trans_diff)
 
-        # Compute the root mean square error for ATE and mean error for ARE
-        ate = np.sqrt(np.mean(np.square(ate_values)))
-        are = np.mean(are_values)
+            # Compute rotational error
+            R_diff = np.dot(gt[:3, :3], pred[:3, :3].T)
+            trace = np.trace(R_diff)
+            angular_error_rad = np.arccos(max(min((trace - 1) / 2, 1), -1))
+            are_sum += angular_error_rad
 
-        return ate, are
+        ATE = ate_sum / len(ground_truth)
+        ARE = are_sum / len(ground_truth)
 
-    def relative_pose_error(self, ground_truths, estimates):
+        return ATE, ARE
+
+    def compute_RRE_and_RTE(self, ground_truth, predictions, delta=1):
         """
-        Computes the RRE and RTE.
+        Compute the RRE and RTE for a list of poses.
 
-        Parameters:
-        ground_truths: list of list of numpy arrays containing ground truth poses ([batch, 4, 4])
-        estimates: list of list of numpy arrays containing estimated poses ([batch, 4, 4])
+        Args:
+        - ground_truth: List of numpy arrays representing the ground truth poses.
+        - predictions: List of numpy arrays representing the predicted poses.
+        - delta: Time difference for relative pose computations.
 
         Returns:
-        rre: Relative Rotation Error
-        rte: Relative Translation Error
+        - RRE: Relative Rotation Error.
+        - RTE: Relative Trajectory Error.
         """
-        rre_values = []
-        rte_values = []
 
-        for batch_gt, batch_est in zip(ground_truths, estimates):
-            for gt_seq, est_seq in zip(batch_gt, batch_est):
-                for i in range(1, len(gt_seq)):
-                    # Ensure gt and est are 2D arrays with shape [4, 4]
-                    gt_prev = np.reshape(gt_seq[i - 1], (4, 4))
-                    gt_curr = np.reshape(gt_seq[i], (4, 4))
+        assert len(ground_truth) == len(predictions), "Ground truth and predictions must have the same length"
 
-                    est_prev = np.reshape(est_seq[i - 1], (4, 4))
-                    est_curr = np.reshape(est_seq[i], (4, 4))
+        rre_sum = 0.0
+        rte_sum = 0.0
+        count = 0
 
-                    # Compute relative poses
-                    gt_rel_pose = np.dot(np.linalg.inv(gt_prev), gt_curr)
-                    est_rel_pose = np.dot(np.linalg.inv(est_prev), est_curr)
+        for i in range(len(ground_truth) - delta):
+            gt_rel = np.dot(np.linalg.inv(ground_truth[i]), ground_truth[i + delta])
+            pred_rel = np.dot(np.linalg.inv(predictions[i]), predictions[i + delta])
 
-                    # Compute the translational error (Euclidean distance between translation parts)
-                    trans_error = np.linalg.norm(gt_rel_pose[:3, 3] - est_rel_pose[:3, 3])
-                    rte_values.append(trans_error)
+            # Ensure the pose matrices are 4x4 (assuming they are homogeneous matrices)
+            assert gt_rel.shape == (4, 4) and pred_rel.shape == (4, 4), "Relative poses should be 4x4 matrices"
 
-                    # Compute the rotational error (angle between rotation matrices)
-                    R_diff = np.dot(gt_rel_pose[:3, :3], est_rel_pose[:3, :3].T)
-                    angle_diff = np.arccos(np.clip((np.trace(R_diff) - 1) / 2, -1, 1))
-                    rre_values.append(angle_diff)
+            # Compute translational error for relative pose
+            trans_diff = gt_rel[:3, 3] - pred_rel[:3, 3]
+            rte_sum += np.linalg.norm(trans_diff)
 
-        # Compute the root mean square error for RTE and mean error for RRE
-        rte = np.sqrt(np.mean(np.square(rte_values)))
-        rre = np.mean(rre_values)
+            # Compute rotational error for relative pose
+            R_diff = np.dot(gt_rel[:3, :3], pred_rel[:3, :3].T)
+            trace = np.trace(R_diff)
+            angular_error_rad = np.arccos(max(min((trace - 1) / 2, 1), -1))
+            rre_sum += angular_error_rad
 
-        return rre, rte
+            count += 1
+
+        RRE = rre_sum / count
+        RTE = rte_sum / count
+
+        return RRE, RTE
+
