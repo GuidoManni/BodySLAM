@@ -8,6 +8,9 @@ torchvision
 wandb
 timm==0.6.7
 
+# 3D-lib
+open3d
+
 # Numerical lib
 numpy
 pandas
