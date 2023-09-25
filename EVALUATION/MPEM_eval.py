@@ -91,6 +91,17 @@ def load_EndoSlam_testing_pose(path_to_dataset):
     return dataset_paths
 
 
+
+def compute_pose(dataset_paths, saving_path_for_prediction):
+    '''
+    This function compute the pposes for a given dataset using the cyclepose
+    :param dataset_paths: a dict that contains the whole directory path of the dataset being passed
+    :saving_path_for_prediction: the save path where to store the results
+    '''
+    
+
+
+
 def evaluate_MPEM(path_to_dataset, saving_path_for_prediction, results_path, compute_pose = True):
     '''
     This function compute the metrics for the evaluation of the MPE module on the EndoSlam dataset
