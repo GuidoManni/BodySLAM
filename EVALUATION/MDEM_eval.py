@@ -89,6 +89,8 @@ def compute_and_save_monocular_depth(dataset_type, dataset_paths, saving_path):
         img_key = "image01"
     elif dataset_type == "EndoSlam":
         img_key = "Frames"
+    elif dataset_type == "SCARED":
+        img_key = "left"
 
     for rectified_folder in dataset_paths.keys():
         print(f"[INFO]: computing depth for {rectified_folder}")
@@ -126,6 +128,8 @@ def compute_metrics_for(dataset_type, dataset_paths, path_to_prediction, results
         depth_folder = "depth01"
     elif dataset_type == "EndoSlam":
         depth_folder = "Pixelwise Depths"
+    elif dataset_type == "SCARED":
+        depth_folder = "left_dp"
 
     # step 1: we get a dict of predictions
     predictions_path = read_zoe_prediction(path_to_prediction)
@@ -159,6 +163,9 @@ def compute_metrics_for(dataset_type, dataset_paths, path_to_prediction, results
             # To compare the results with Endo-Depth-And-Motion we need to clip the ground truth
             if dataset_type == "Hamlyn":
                 ground_truth = np.clip(ground_truth, 1, 300)
+            elif dataset_type == "SCARED":
+                # since the SCARED dataset provide sparse depth map we need to create a mask containing only non zero valuse
+                ground_truth = ground_truth > 0
 
             prediction = imgeproc.min_max_normalization(prediction)
             ground_truth = imgeproc.min_max_normalization(ground_truth)
@@ -224,7 +231,7 @@ def compute_metrics_for(dataset_type, dataset_paths, path_to_prediction, results
 def evaluate_MDEM_on(dataset_type, path_to_dataset, saving_path_for_prediction, results_path, compute_depth = True):
     '''
     This function evaluate the MDEM on different datasets
-    :param dataset_type: the dataset to use for validation (Hamlyn/EndoSlam)
+    :param dataset_type: the dataset to use for validation (Hamlyn/EndoSlam/SCARED)
     :param path_to_ground_truth: the path to the ground_truth depth map
     :param path_to_rgb: the path to the rgb images
     :param saving_path_for_prediction: the path where to save the predictions
@@ -232,12 +239,14 @@ def evaluate_MDEM_on(dataset_type, path_to_dataset, saving_path_for_prediction, 
     :return:
     '''
 
-    assert dataset_type == "Hamlyn" or dataset_type == "EndoSlam", "[ERROR]: DATASET TYPE MUST BE 'Hamlyn' or 'EndoSlam'"
+    assert dataset_type == "Hamlyn" or dataset_type == "EndoSlam" or dataset_type == "SCARED", "[ERROR]: DATASET TYPE MUST BE 'Hamlyn' or 'EndoSlam'"
     # step 0: we load the paths
     if dataset_type == "Hamlyn":
         dataset_paths = dataset_loader.read_Hamlyn(path_to_dataset)
     elif dataset_type == "EndoSlam":
         dataset_paths = dataset_loader.read_EndoSlam(path_to_dataset)
+    elif dataset_type == "SCARED":
+        dataset_paths = dataset_loader.read_SCARED(path_to_dataset)
 
     # step 1: we compute the depth
     if compute_depth:
@@ -260,11 +269,11 @@ imgeproc = ImageProc()
 dataset_loader = DatasetLoader()
 
 #path_to_dataset = "/home/gvide/Dataset/Hamlyn_Dataset"
-path_to_dataset = "/home/gvide/Dataset/EndoSlam"
-saving_path = "/home/gvide/Dataset/test_endoslam/"
-results_path = "/home/gvide/Dataset/results_endoslam/"
-dataset_type = "EndoSlam"
+path_to_dataset = "/home/gvide/Dataset/SCARED"
+saving_path = "/home/gvide/Dataset/test_scared/"
+results_path = "/home/gvide/Dataset/results_scared/"
+dataset_type = "SCARED"
 
-evaluate_MDEM_on(dataset_type, path_to_dataset, saving_path, results_path, False)
+evaluate_MDEM_on(dataset_type, path_to_dataset, saving_path, results_path, True)
 #read_Hamlyn("/home/gvide/Dataset/Hamlyn_Dataset")
 
