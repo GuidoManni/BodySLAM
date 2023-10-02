@@ -122,7 +122,7 @@ class MPEM_Metrics:
     def __init__(self):
         pass
 
-    def absolute_pose_error(self, ground_truth, predictions):
+    def compute_ARE_and_ATE(self, ground_truth, predictions):
         """
         Computes the ATE and ARE.
 
@@ -134,6 +134,8 @@ class MPEM_Metrics:
         ate: Absolute Trajectory Error
         are: Absolute Rotation Error
         """
+        print(f"ground_truth: {len(ground_truth)}")
+        print(f"predictions: {len(predictions)}")
         assert len(ground_truth) == len(predictions), "Ground truth and predictions must have the same length"
 
         ate_sum = 0.0
