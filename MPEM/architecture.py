@@ -45,6 +45,7 @@ class MultiTaskModel(nn.Module):
             nn.Conv2d(512, 1, 4, padding=1)
         )
 
+        '''
         # Define pose prediction layers
         self.pose_layers = nn.Sequential(
             nn.AdaptiveAvgPool2d((1, 1)),  # average pooling to transform feature map to 1x1 size
@@ -53,19 +54,32 @@ class MultiTaskModel(nn.Module):
             nn.ReLU(inplace=True),  # Activation function
             nn.Linear(128, 6)  # Output layer to output 6 DOF pose
         )
+        '''
+        self.lstm_input_size = 512 * 2
+        self.hidden_size = 128
+        self.num_layers = 1
+
+        self.lstm = nn.LSTM(self.lstm_input_size, self.hidden_size, self.num_layers, batch_first=True)
+        self.fc = nn.Linear(self.hidden_size, 6)  # output 6 DOF pose
 
     def forward(self, prev_frame = None, curr_frame = None):
+        # Define an initial hidden state
+
         if prev_frame is not None and curr_frame is not None:
-            # Process each input separately through the shared layers
+            h0 = torch.zeros(self.num_layers, prev_frame.size(0), self.hidden_size).to(prev_frame.device)
+            c0 = torch.zeros(self.num_layers, prev_frame.size(0), self.hidden_size).to(prev_frame.device)
             prev_frame_output = self.shared_layers(prev_frame)
             curr_frame_output = self.shared_layers(curr_frame)
             shared_output = torch.cat([prev_frame_output, curr_frame_output], dim=1)
+            #shared_output = shared_output.view(shared_output.size(0), 1, -1)  # reshape for LSTM input
+            shared_output = torch.mean(shared_output, dim=[2, 3]).view(shared_output.size(0), 1, -1)  # Apply GAP and reshape for LSTM
 
-            pose_output = self.pose_layers(shared_output)
+            lstm_out, _ = self.lstm(shared_output, (h0, c0))
+            pose_output = self.fc(lstm_out[:, -1, :])  # only use the last sequence output
 
             # get the SE3 representation
-            translation_vector = pose_output[:,:3]
-            rotation_vector = pose_output[:,3:]
+            translation_vector = pose_output[:, :3]
+            rotation_vector = pose_output[:, 3:]
 
             rotation_matrix = self.LEM.convert_euler_angles_to_rotation_matrix(rotation_vector)
 
@@ -73,7 +87,6 @@ class MultiTaskModel(nn.Module):
             motion_matrix_SE3 = torch.eye(4).unsqueeze(0).repeat(rotation_vector.shape[0], 1, 1)
             motion_matrix_SE3[:, :3, :3] = rotation_matrix
             motion_matrix_SE3[:, :3, 3] = translation_vector
-
             return motion_matrix_SE3, pose_output
         elif prev_frame is not None and curr_frame is None:
             prev_frame_output = self.shared_layers(prev_frame)
