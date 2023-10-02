@@ -327,6 +327,85 @@ class DatasetLoader:
 
         return dataset_paths
 
+    def read_SCARED(self, path_to_SCARED):
+        '''
+        This function obtain the full relative path of all the images.
+        :param path_to_SCARED: path to the dataset
+        :return: dict_of_path
+        '''
+        '''
+        To use this function the directory must follow this structure!
+        Directory Structure:
+        SCARED
+        -> dataset_1_kf_1
+            -> frame_data: contains the intrinsic and the camera poses
+            -> left: contains the left rgb images
+            -> left_dp: contains the sparse depth map
+            -> right
+            -> right_dp
+        ...
+        -> dataset_7_kf_4
+        '''
+
+        dataset_paths = {}
+
+        # step 1: we read the content of the root folder
+        SCARED_root_content = os.listdir(path_to_SCARED)
+        print("[INFO]: found the following content in the folder provided")
+        print(SCARED_root_content)
+
+        # step 2: we built the full relative path
+        SCARED_root_content_path = []
+        for i in range(len(SCARED_root_content)):
+            SCARED_root_content_path.append(os.path.join(path_to_SCARED, SCARED_root_content[i]))
+        SCARED_root_content_path = sorted(SCARED_root_content_path)
+
+        # step 3: we extract the depth & images
+        for i in range(len(SCARED_root_content_path)):
+            dataset_content = os.listdir(SCARED_root_content_path[i])
+            folder_name = SCARED_root_content_path[i].split("/")[-1]
+            print(f"[INFO]: loading file from {SCARED_root_content_path[i]}")
+            dataset_content_dict = {}
+            for j in range(len(dataset_content)):
+                list_content = []
+                if dataset_content[j] == "left_dp":
+                    tmp = os.listdir(os.path.join(SCARED_root_content_path[i], dataset_content[j]))
+                    for elem in tmp:
+                        if '.png' in elem:
+                            list_content.append(os.path.join(SCARED_root_content_path[i], dataset_content[j], elem))
+                    dataset_content_dict["left_dp"] = sorted(list_content)
+
+                elif dataset_content[j] == "right_dp":
+                    tmp = os.listdir(os.path.join(SCARED_root_content_path[i], dataset_content[j]))
+                    for elem in tmp:
+                        if '.png' in elem:
+                            list_content.append(os.path.join(SCARED_root_content_path[i], dataset_content[j], elem))
+                    dataset_content_dict["right_dp"] = sorted(list_content)
+
+                elif dataset_content[j] == "left":
+                    tmp = os.listdir(os.path.join(SCARED_root_content_path[i], dataset_content[j]))
+                    for elem in tmp:
+                        if '.png' in elem:
+                            list_content.append(os.path.join(SCARED_root_content_path[i], dataset_content[j], elem))
+                    dataset_content_dict["left"] = sorted(list_content)
+                elif dataset_content[j] == "right":
+                    tmp = os.listdir(os.path.join(SCARED_root_content_path[i], dataset_content[j]))
+                    for elem in tmp:
+                        if '.png' in elem:
+                            list_content.append(os.path.join(SCARED_root_content_path[i], dataset_content[j], elem))
+                    dataset_content_dict["right"] = sorted(list_content)
+
+                elif dataset_content[j] == "frame_data":
+                    tmp = os.listdir(os.path.join(SCARED_root_content_path[i], dataset_content[j]))
+                    for elem in tmp:
+                        if '.json' in elem:
+                            list_content.append(os.path.join(SCARED_root_content_path[i], dataset_content[j], elem))
+                    dataset_content_dict["poses"] = sorted(list_content)
+
+                dataset_paths[folder_name] = dataset_content_dict
+
+        return dataset_paths
+
     def read_EndoSlam(self, path_to_EndoSlam):
         '''
         This function read the EndoSlam dataset
