@@ -297,6 +297,32 @@ class TrainingLoss:
 
         return rre, rte
 
+    def compute_scale_factor(self, ground_truth, predictions):
+        """
+        Computes the scale factor to address the scale ambiguity problem.
+
+        Parameters:
+        ground_truth: List of numpy arrays representing the ground truth poses.
+        predictions: List of numpy arrays representing the predicted poses.
+
+        Returns:
+        scale_factor: computed scale to fix scale ambiguity problem
+        """
+        dot_product_sum = 0.0
+        norm_pred_sum = 0.0
+
+        for gt, pred in zip(ground_truth, predictions):
+            # Ensure the pose matrices are 4x4
+            assert gt.shape == (4, 4) and pred.shape == (4, 4), "Poses should be 4x4 matrices"
+
+            # Compute scale factor components
+            dot_product_sum += np.dot(gt[:3, 3], pred[:3, 3])
+            norm_pred_sum += np.linalg.norm(pred[:3, 3]) ** 2
+
+        scale_factor = dot_product_sum / norm_pred_sum
+        return scale_factor
+
+
     def compute_ARE_and_ATE(self, ground_truth, predictions):
         """
         Computes the ATE and ARE.
@@ -313,12 +339,17 @@ class TrainingLoss:
         print(f"predictions: {len(predictions)}")
         assert len(ground_truth) == len(predictions), "Ground truth and predictions must have the same length"
 
+        scale_factor = self.compute_scale_factor(ground_truth, predictions)
+
         ate_sum = 0.0
         are_sum = 0.0
 
         for gt, pred in zip(ground_truth, predictions):
             # Ensure the pose matrices are 4x4 (assuming they are homogeneous matrices)
             assert gt.shape == (4, 4) and pred.shape == (4, 4), "Poses should be 4x4 matrices"
+
+            # Scale the predicted translation
+            pred[:3, 3] *= scale_factor
 
             # Compute translational error
             trans_diff = gt[:3, 3] - pred[:3, 3]
