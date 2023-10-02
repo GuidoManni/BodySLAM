@@ -159,6 +159,8 @@ def train_model(training_dataset_path, testing_dataset_path, num_epoch, batch_si
             # Training the Generator and Pose Network
             G_AB.train()
             G_BA.train()
+            PaD_A.train()
+            PaD_B.train()
 
             optimizer_G.zero_grad()
 
