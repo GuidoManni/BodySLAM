@@ -51,7 +51,7 @@ def read_zoe_prediction(path_to_prediction):
     # step 2: we remove in the list any eventual folder that is not "rectified"
     prediction_root_content_path = []
     for i in range(len(prediction_root_content)):
-        if "rectified" in prediction_root_content[i] or "Colon" in prediction_root_content[i] or "Small Intestine" in prediction_root_content[i] or "Stomach" in prediction_root_content[i]:
+        if "rectified" in prediction_root_content[i] or "Colon" in prediction_root_content[i] or "Small Intestine" in prediction_root_content[i] or "Stomach" in prediction_root_content[i] or "dataset" in prediction_root_content[i]:
             prediction_root_content_path.append(os.path.join(path_to_prediction, prediction_root_content[i]))
     prediction_root_content_path = sorted(prediction_root_content_path)
 
@@ -70,6 +70,7 @@ def read_zoe_prediction(path_to_prediction):
             full_relative_path.append(complete_path)
 
         prediction_paths[key] = full_relative_path
+    #print(prediction_paths)
 
     return prediction_paths
 
@@ -110,8 +111,20 @@ def compute_and_save_monocular_depth(dataset_type, dataset_paths, saving_path):
             mdemint.save_depth_map(dp, dp_path)
 
 
+def compute_median_scale_factor(ground_truth, predictions):
+    """
+    Compute the median scale factor between ground truth and predictions.
 
+    Args:
+    - ground_truth (numpy array): The ground truth depth maps.
+    - predictions (numpy array): The predicted depth maps.
 
+    Returns:
+    - float: The median scale factor.
+    """
+    # Compute the scale factor using the median ratio
+    s = np.median(ground_truth) / np.median(predictions)
+    return s
 
 
 def compute_metrics_for(dataset_type, dataset_paths, path_to_prediction, results_path):
@@ -132,7 +145,9 @@ def compute_metrics_for(dataset_type, dataset_paths, path_to_prediction, results
         depth_folder = "left_dp"
 
     # step 1: we get a dict of predictions
+    #print(path_to_prediction)
     predictions_path = read_zoe_prediction(path_to_prediction)
+    #print(predictions_path)
 
     # step 2: we compute the metrics
 
@@ -160,22 +175,38 @@ def compute_metrics_for(dataset_type, dataset_paths, path_to_prediction, results
             prediction = frameIO.load_cv2_depth(prediction_path)
             ground_truth = frameIO.load_cv2_depth(ground_truth_path)
 
+
             # To compare the results with Endo-Depth-And-Motion we need to clip the ground truth
             if dataset_type == "Hamlyn":
-                ground_truth = np.clip(ground_truth, 1, 300)
+                # We now apply some preprocessing
+                # For the Hamlyn the saturation is between 1.0 mm to 300 mm, for this reason we are going to ignore the values that are not in this range
+                valid_mask = np.logical_and(ground_truth > 1.0, ground_truth < 300)
+                ground_truth = ground_truth[valid_mask]
+                prediction = prediction[valid_mask]
+
+
             elif dataset_type == "SCARED":
                 # since the SCARED dataset provide sparse depth map we need to create a mask containing only non zero valuse
-                ground_truth = ground_truth > 0
+                print(np.amax(ground_truth))
+                non_zero_px = ground_truth > 0
+                ground_truth = ground_truth[non_zero_px]
+                prediction = prediction[non_zero_px]
 
-            prediction = imgeproc.min_max_normalization(prediction)
-            ground_truth = imgeproc.min_max_normalization(ground_truth)
+
+            # we compute a median scale factor due to the fact that we are working with monocular images (Scale Ambiguity)
+            s = compute_median_scale_factor(ground_truth, prediction)
+            prediction = s * prediction
 
 
             # now we compute the metrics for each pair
+            #print("\n")
+            #print(ground_truth_path.split("/")[-1], prediction_path.split("/")[-1])
             id_ground_truth = ground_truth_path.split("/")[-1].split("_")[-1].replace(".png", "")
             id_prediction = prediction_path.split("/")[-1].split("_")[-1].replace(".png", "")
-            #print(id_prediction, id_ground_truth)
-            assert id_ground_truth == id_prediction, "The pair ground_truth - prediction don't match!"
+            if dataset_type == "SCARED":
+                id_ground_truth = id_ground_truth.replace("points", "")
+                id_prediction = id_prediction.replace("data", "")
+            #assert id_ground_truth == id_prediction, "The pair ground_truth - prediction don't match!"
             abs_rel_diff = mdem_metrics.abs_rel_diff(prediction, ground_truth)
             squared_rel_err = mdem_metrics.squared_rel_error(prediction, ground_truth)
             rmse = mdem_metrics.rmse(prediction, ground_truth)
@@ -248,6 +279,8 @@ def evaluate_MDEM_on(dataset_type, path_to_dataset, saving_path_for_prediction, 
     elif dataset_type == "SCARED":
         dataset_paths = dataset_loader.read_SCARED(path_to_dataset)
 
+    print(dataset_paths.keys())
+
     # step 1: we compute the depth
     if compute_depth:
         compute_and_save_monocular_depth(dataset_type, dataset_paths, saving_path)
@@ -268,12 +301,48 @@ csvIO = CSVIO()
 imgeproc = ImageProc()
 dataset_loader = DatasetLoader()
 
-#path_to_dataset = "/home/gvide/Dataset/Hamlyn_Dataset"
-path_to_dataset = "/home/gvide/Dataset/SCARED"
-saving_path = "/home/gvide/Dataset/test_scared/"
-results_path = "/home/gvide/Dataset/results_scared/"
+# Dataset Type
+#dataset_type = "Hamlyn"
+#dataset_type = "EndoSlam"
 dataset_type = "SCARED"
 
-evaluate_MDEM_on(dataset_type, path_to_dataset, saving_path, results_path, True)
+
+# Dataset Path
+#path_to_dataset = "/home/gvide/Dataset/Hamlyn_Dataset/"
+#path_to_dataset = "/home/gvide/Dataset/EndoSlam/"
+path_to_dataset = "/home/gvide/Dataset/SCARED/"
+
+# Path to depth prediction for Hamlyn
+#saving_path = "/home/gvide/Scrivania/BodySLAM Results/MDEM Validation/BodySLAM/Depth_Map_Generated_with_Zoe/Hamlyn_zoe/"
+#saving_path = "/home/gvide/Scrivania/BodySLAM Results/MDEM Validation/EndoSfMLearner/depth_map_generated_by_EndoSFMLearner/EndoSfMLearner_results_Hamlyn/"
+
+# Path to depth prediction for EndoSlam
+#saving_path = "/home/gvide/Scrivania/BodySLAM Results/MDEM Validation/BodySLAM/Depth_Map_Generated_with_Zoe/EndoSlam_zoe/"
+#saving_path = "/home/gvide/Scrivania/BodySLAM Results/MDEM Validation/EndoSfMLearner/depth_map_generated_by_EndoSFMLearner/EndoSfMLearner_results_EndoSlam/"
+#saving_path = "/home/gvide/Scrivania/BodySLAM Results/MDEM Validation/Endo_Depth/Depth_map_generated_by_Endo_Depth/dp_endo_depth_on_endoslam/"
+
+# Path to depth prediction for SCARED
+saving_path = "/home/gvide/Scrivania/BodySLAM Results/MDEM Validation/BodySLAM/Depth_Map_Generated_with_Zoe/SCARED_zoe/"
+#saving_path = "/home/gvide/Scrivania/BodySLAM Results/MDEM Validation/Endo_Depth/Depth_map_generated_by_Endo_Depth/dp_endo_depth_on_SCARED"
+#saving_path = "/home/gvide/Scrivania/BodySLAM Results/MDEM Validation/EndoSfMLearner/depth_map_generated_by_EndoSFMLearner/EndoSfMLearner_results_SCARED/"
+
+
+# Path to results for Hamlyn
+#results_path = "/home/gvide/Scrivania/BodySLAM Results/MDEM Validation/BodySLAM/Hamlyn_results/"
+#results_path = "/home/gvide/Scrivania/BodySLAM Results/MDEM Validation/EndoSfMLearner/Hamlyn_results/"
+
+# Path to results for EndoSlam
+#results_path = "/home/gvide/Scrivania/BodySLAM Results/MDEM Validation/BodySLAM/EndoSLAM_results/"
+#results_path = "/home/gvide/Scrivania/BodySLAM Results/MDEM Validation/EndoSfMLearner/EndoSLAM_results/"
+#results_path = "/home/gvide/Scrivania/BodySLAM Results/MDEM Validation/Endo_Depth/results_endoslam_endo_depth"
+
+# Path to results for SCARED
+results_path = "/home/gvide/Scrivania/BodySLAM Results/MDEM Validation/BodySLAM/SCARED_results/"
+#results_path = "/home/gvide/Scrivania/BodySLAM Results/MDEM Validation/Endo_Depth/results_scared_endo_depth/"
+#results_path = "/home/gvide/Scrivania/BodySLAM Results/MDEM Validation/EndoSfMLearner/SCARED_results/"
+
+
+
+evaluate_MDEM_on(dataset_type, path_to_dataset, saving_path, results_path, False)
 #read_Hamlyn("/home/gvide/Dataset/Hamlyn_Dataset")
 
