@@ -343,6 +343,6 @@ results_path = "/home/gvide/Scrivania/BodySLAM Results/MDEM Validation/BodySLAM/
 
 
 
-evaluate_MDEM_on(dataset_type, path_to_dataset, saving_path, results_path, False)
+evaluate_MDEM_on(dataset_type, path_to_dataset, saving_path, results_path, True)
 #read_Hamlyn("/home/gvide/Dataset/Hamlyn_Dataset")
 
