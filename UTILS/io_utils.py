@@ -26,7 +26,7 @@ import pandas as pd
 from scipy.spatial.transform import Rotation as R
 
 # Internal module
-from UTILS.geometry_utils import LieEuclideanMapper
+from UTILS.geometry_utils import LieEuclideanMapper, PoseOperator
 
 class FrameIO:
     def load_p_img(self, path_to_img, convert_to_rgb = False):
@@ -241,7 +241,7 @@ class CSVIO:
                 writer.writeheader()
                 writer.writerow(metrics)
         else:
-            for keys in metrics[0].keys():
+            for keys in metrics.keys():
                 headers.append(keys)
 
             with open(saving_path, 'w', newline='') as csvfile:
@@ -251,6 +251,24 @@ class CSVIO:
                     writer.writerow(metrics[i])
 
 
+class TXTIO:
+    def __init__(self):
+        self.poseOperator = PoseOperator()
+    def save_poses_as_kitti(self, poses_list, output_path):
+        """Save a list of 4x4 numpy array poses in KITTI format after ensuring SO(3) validity."""
+
+        # Ensure that all rotation matrices are in SO(3)
+        corrected_poses = []
+        for pose in poses_list:
+            corrected_pose = np.copy(pose)
+            corrected_pose[:3, :3] = self.poseOperator.ensure_so3(pose[:3, :3])
+            corrected_poses.append(corrected_pose)
+
+        # Save the poses to a .txt file with each pose on one line
+        with open(output_path, 'w') as f:
+            for pose in corrected_poses:
+                # Flatten the pose matrix and write as a single line
+                f.write(" ".join(map(str, pose.flatten()[:-4])) + "\n")
 
 
 class DatasetLoader:
