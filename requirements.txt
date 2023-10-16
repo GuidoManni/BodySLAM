@@ -16,6 +16,9 @@ numpy
 pandas
 scipy
 
+# Metric lib
+evo
+
 # IO-lib
 openpyxl
 
