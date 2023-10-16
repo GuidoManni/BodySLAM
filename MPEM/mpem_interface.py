@@ -18,6 +18,9 @@ from torchvision import transforms
 from UTILS.io_utils import FrameIO, ModelIO
 from MPEM.architecture import MultiTaskModel
 
+# Computational Lib
+import numpy as np
+
 class MPEMInterface:
     # This class call/initialize the instances to interface with the MPE
 
