@@ -20,6 +20,11 @@ import numpy as np
 # Computer Vision lib
 import cv2
 
+# Metric lib
+from evo.core import metrics
+from evo.core import units
+from evo.tools import file_interface
+
 # Stat lib
 import wandb
 
@@ -32,7 +37,7 @@ from torch.optim import Adam
 # Internal Module
 from architecture import MultiTaskModel, ConditionalGenerator
 from training_utils import TrainingLoss
-from UTILS.io_utils import ModelIO
+from UTILS.io_utils import ModelIO, TXTIO
 from dataloader import DatasetsIO
 from UTILS.geometry_utils import PoseOperator
 
@@ -40,6 +45,7 @@ from UTILS.geometry_utils import PoseOperator
 datasetIO = DatasetsIO()
 modelIO = ModelIO()
 poseOperator = PoseOperator()
+txtIO = TXTIO()
 
 def check_value(value):
     assert value == 1 or value == 0, "value must be 0 or 1"
@@ -49,9 +55,10 @@ def check_value(value):
         return False
 
 
+
 def train_model(training_dataset_path, testing_dataset_path, num_epoch, batch_size,
                 path_to_the_model, load_model, standard_cycle, standard_identity,
-                num_worker = 10, lr = 0.0002, input_shape = (3, 256, 256), weights_cycle_loss = [0.5, 0.5, 0.5, 0.5],
+                num_worker = 10, lr = 0.0002, input_shape = (1, 256, 256), weights_cycle_loss = [0.5, 0.5, 0.5, 0.5],
                 weights_identity_loss = [0.5, 0.5, 0.5, 0.5], id = "0", id_wandb_run = ''):
 
     load_model = check_value(load_model)
@@ -76,16 +83,15 @@ def train_model(training_dataset_path, testing_dataset_path, num_epoch, batch_si
     else:
         # we start a new run
         wandb.init(
-            project="Pose Estimator",
+            project="MPEM_AR_V2",
 
             config={
                 "learning_rate": 0.001,
                 "architecture": "CycleGan",
-                "epoch": 500,
-                "standard": True,
-                "weights": "[0.5, 0.5, 0.5, 0.5]"
+                "epoch": 250,
             }
         )
+
 
 
     
@@ -103,10 +109,10 @@ def train_model(training_dataset_path, testing_dataset_path, num_epoch, batch_si
     # step 2: we initialize the models
     G_AB = ConditionalGenerator(input_shape=input_shape).to(DEVICE) # the generator that from A generates B
     G_BA = ConditionalGenerator(input_shape=input_shape).to(DEVICE) # the generator that from B generates A
-    PaD_A = MultiTaskModel(input_shape=input_shape).to(DEVICE) # the Pose estimator and the discriminator of A
-    PaD_B = MultiTaskModel(input_shape=input_shape).to(DEVICE) # the Pose estimator and the discriminator of B
+    PaD_A = MultiTaskModel(input_shape=input_shape, device = DEVICE).to(DEVICE) # the Pose estimator and the discriminator of A
+    PaD_B = MultiTaskModel(input_shape=input_shape, device = DEVICE).to(DEVICE) # the Pose estimator and the discriminator of B
 
-    PaD_shape = MultiTaskModel(input_shape=input_shape)
+    PaD_shape = MultiTaskModel(input_shape=input_shape, device= DEVICE)
 
     # step 3: we initialize the optimizers
     optimizer_G = Adam(params=itertools.chain(G_AB.parameters(), G_BA.parameters()), lr=lr, betas=(0.5, 0.999)) # optimizer for the GANs
@@ -150,8 +156,11 @@ def train_model(training_dataset_path, testing_dataset_path, num_epoch, batch_si
         num_batches = 0
 
         for batch, data in enumerate(train_loader):
-            real_fr1 = data["rgb1"].to(DEVICE)
-            real_fr2 = data["rgb2"].to(DEVICE)
+            #real_fr1 = data["rgb1"].to(DEVICE)
+            #real_fr2 = data["rgb2"].to(DEVICE)
+            real_fr1 = data["dp1"].to(DEVICE)
+            real_fr2 = data["dp2"].to(DEVICE)
+
 
             valid = torch.Tensor(np.ones((real_fr1.size(0), *PaD_shape.output_shape))).to(DEVICE)  # requires_grad = False. Default.
             fake = torch.Tensor(np.zeros((real_fr1.size(0), *PaD_shape.output_shape))).to(DEVICE)  # requires_grad = False. Default.
@@ -166,11 +175,18 @@ def train_model(training_dataset_path, testing_dataset_path, num_epoch, batch_si
 
 
             # Estimate the pose
-            estimated_pose_AB_SE3, estimated_pose_AB = PaD_B(real_fr1, real_fr2)
-            estimated_pose_BA_SE3, estimated_pose_BA = PaD_A(real_fr2, real_fr1)
+            stacked_fr1_dp1 = torch.cat([real_fr1, dp1])
+            stacked_fr2_dp2 = torch.cat([real_fr2, dp2])
+            stacked_frame12 = torch.cat([stacked_fr1_dp1, stacked_fr2_dp2], dim=1)
+            stacked_frame21 = torch.cat([stacked_fr2_dp2, stacked_fr1_dp1], dim=1)
+            estimated_pose_AB_SE3 = PaD_B(stacked_frame12, task = "pose")
+            estimated_pose_BA_SE3 = PaD_A(stacked_frame21, task = "pose")
+
+            print(estimated_pose_AB_SE3.shape)
 
             # Identity Loss
-            identity_motion = torch.zeros(estimated_pose_AB.shape[0], estimated_pose_AB.shape[1]).to(DEVICE)
+            #identity_motion = torch.zeros(estimated_pose_AB_SE3.shape[0], estimated_pose_AB_SE3.shape[1]).to(DEVICE)
+            identity_motion = torch.eye(4).unsqueeze(0).expand(estimated_pose_AB_SE3.shape[0], -1, -1).to(DEVICE)
 
             if standard_identity:
                 print("standard_id")
@@ -184,31 +200,37 @@ def train_model(training_dataset_path, testing_dataset_path, num_epoch, batch_si
                 # we compute our custom identity loss
                 identity_fr1 = G_BA(real_fr1, identity_motion)
                 identity_fr2 = G_AB(real_fr2, identity_motion)
-                _, identity_p1 = PaD_A(identity_fr1, real_fr1)
-                _, identity_p2 = PaD_B(identity_fr2, real_fr2)
+                identity_stacked_fr1 = torch.cat([identity_fr1, real_fr1], dim = 1)
+                identity_stacked_fr2 = torch.cat([identity_fr2, real_fr2], dim=1)
+                identity_p1 = PaD_A(identity_stacked_fr1, task = "pose")
+                identity_p2 = PaD_B(identity_stacked_fr2, task = "pose")
 
                 total_identity_loss = losses.custom_total_identity_loss(identity_fr1, real_fr1, identity_p1, identity_motion, identity_fr2, real_fr2, identity_p2, identity_motion, weights_identity_loss)
 
             # GAN loss
-            fake_fr2 = G_AB(real_fr1, estimated_pose_AB)
-            fake_fr1 = G_BA(real_fr2, estimated_pose_BA)
-            loss_GAN = losses.standard_total_GAN_loss(PaD_B(curr_frame = fake_fr2), valid, PaD_A(curr_frame = fake_fr1), valid)
+            fake_fr2 = G_AB(real_fr1, estimated_pose_AB_SE3)
+            fake_fr1 = G_BA(real_fr2, estimated_pose_BA_SE3)
+            curr_frame_fake_2 = torch.cat([fake_fr2, fake_fr2], dim = 1)
+            curr_frame_fake_1 = torch.cat([fake_fr1, fake_fr1], dim = 1)
+            loss_GAN = losses.standard_total_GAN_loss(PaD_B(curr_frame_fake_2, task = "discriminator"), valid, PaD_A(curr_frame_fake_1, task = "discriminator"), valid)
 
             # Cycle loss
             if standard_cycle:
                 print("standard_cycle")
                 # we compute the standard cycle loss of the cyclegan
-                recov_fr1 = G_BA(fake_fr2, estimated_pose_BA)
-                recov_fr2 = G_AB(fake_fr1, estimated_pose_AB)
+                recov_fr1 = G_BA(fake_fr2, estimated_pose_BA_SE3)
+                recov_fr2 = G_AB(fake_fr1, estimated_pose_AB_SE3)
                 total_cycle_loss = losses.standard_total_cycle_loss(recov_fr1, real_fr1, recov_fr2, real_fr2)
             else:
                 print("not standard_cycle")
                 # we compute our custom cycle loss
-                recov_fr1 = G_BA(fake_fr2, estimated_pose_BA)
-                recov_fr2 = G_AB(fake_fr1, estimated_pose_AB)
-                _, recov_P12 = PaD_A(recov_fr1, recov_fr2)
-                _, recov_P21 = PaD_B(recov_fr2, recov_fr1)
-                total_cycle_loss = losses.custom_total_cycle_loss(recov_fr1, real_fr1, recov_P12, estimated_pose_AB, recov_fr2, real_fr2, recov_P21, estimated_pose_BA, weights_cycle_loss)
+                recov_fr1 = G_BA(fake_fr2, estimated_pose_BA_SE3)
+                recov_fr2 = G_AB(fake_fr1, estimated_pose_AB_SE3)
+                recov_fr12 = torch.cat([recov_fr1, recov_fr2], dim = 1)
+                recov_fr21 = torch.cat([recov_fr2, recov_fr1], dim=1)
+                recov_P12 = PaD_A(recov_fr12, task = "pose")
+                recov_P21 = PaD_B(recov_fr21, task = "pose")
+                total_cycle_loss = losses.custom_total_cycle_loss(recov_fr1, real_fr1, recov_P12, estimated_pose_AB_SE3, recov_fr2, real_fr2, recov_P21, estimated_pose_BA_SE3, weights_cycle_loss)
 
             loss_G = loss_GAN + (10.0 * total_cycle_loss) + (5.0 * total_identity_loss)
             loss_G.backward()
@@ -217,18 +239,20 @@ def train_model(training_dataset_path, testing_dataset_path, num_epoch, batch_si
             # Training the Discriminator A
 
             optimizer_PaD_A.zero_grad()
-
-            loss_DA = losses.standard_discriminator_loss(PaD_A(prev_frame = real_fr1), valid, PaD_A(prev_frame = fake_fr1.detach()), fake)
+            prev_frame_real = torch.cat([real_fr1, real_fr1], dim=1)
+            prev_frame_fake = torch.cat([fake_fr1.detach(), fake_fr1.detach()], dim=1)
+            loss_DA = losses.standard_discriminator_loss(PaD_A(prev_frame_real, task = 'discriminator'), valid, PaD_A(prev_frame_fake, task = 'discriminator'), fake)
 
             loss_DA.backward()
             optimizer_PaD_A.step()
 
             # Training the Discriminator B
-
+            prev_frame_real = torch.cat([real_fr2, real_fr2], dim=1)
+            prev_frame_fake = torch.cat([fake_fr2.detach(), fake_fr2.detach()], dim=1)
             optimizer_PaD_B.zero_grad()
 
-            loss_DB = losses.standard_discriminator_loss(PaD_B(curr_frame=real_fr2), valid,
-                                                             PaD_A(curr_frame=fake_fr2.detach()), fake)
+            loss_DB = losses.standard_discriminator_loss(PaD_B(prev_frame_real, task = 'discriminator'), valid,
+                                                             PaD_B(prev_frame_fake, task = 'discriminator'), fake)
 
             loss_DB.backward()
             optimizer_PaD_B.step()
@@ -263,6 +287,12 @@ def train_model(training_dataset_path, testing_dataset_path, num_epoch, batch_si
         num_batches = 0
         count = 0
 
+        ATE_metric = metrics.APE(metrics.PoseRelation.translation_part)
+        ARE_metric = metrics.APE(metrics.PoseRelation.rotation_angle_deg)
+        RTE_metric = metrics.RPE(metrics.PoseRelation.translation_part)
+        RRE_metric = metrics.RPE(metrics.PoseRelation.rotation_angle_deg)
+
+
         ground_truth_pose = []
         predictions = []
         ATE = []
@@ -280,14 +310,18 @@ def train_model(training_dataset_path, testing_dataset_path, num_epoch, batch_si
             PaD_A.eval()
             PaD_B.eval()
 
-            gt = []
-            pd = []
+            gt_list = [np.eye(4)]
+            pd_list = [np.eye(4)]
 
             with torch.no_grad():
                 for batch, data in enumerate(testing_loader):
-                    real_fr1 = data["rgb1"].to(DEVICE)
-                    real_fr2 = data["rgb2"].to(DEVICE)
-                    target = data["target"].to(DEVICE).float()
+                    #real_fr1 = data["rgb1"].to(DEVICE)
+                    #real_fr2 = data["rgb2"].to(DEVICE)
+                    real_fr1 = data["dp1"].to(DEVICE)
+                    real_fr2 = data["dp2"].to(DEVICE)
+                    pose_fr1 = data["target"][0].to(DEVICE).float()
+                    pose_fr2 = data["target"][0].to(DEVICE).float()
+                    relative_pose = data["target"][0].to(DEVICE).float()
 
                     # Evaluate GAN & POSE
 
@@ -296,15 +330,26 @@ def train_model(training_dataset_path, testing_dataset_path, num_epoch, batch_si
                     fake = torch.Tensor(np.zeros((real_fr1.size(0), *PaD_shape.output_shape))).to(DEVICE)  # requires_grad = False. Default.
 
                     # Estimate the pose
-                    estimated_pose_AB_SE3, estimated_pose_AB = PaD_B(real_fr1, real_fr2)
-                    estimated_pose_BA_SE3, estimated_pose_BA = PaD_A(real_fr2, real_fr1)
+                    stacked_frame12 = torch.cat([real_fr1, real_fr2], dim=1)
+                    stacked_frame21 = torch.cat([real_fr2, real_fr1], dim=1)
+                    estimated_pose_AB_SE3 = PaD_B(stacked_frame12, task="pose")
+                    estimated_pose_BA_SE3 = PaD_A(stacked_frame21, task="pose")
 
-
-                    gt.append(target.squeeze().cpu().numpy())
-                    pd.append(estimated_pose_AB_SE3.squeeze().cpu().numpy())
+                    # get the absolute poses
+                    pd_rel = estimated_pose_AB_SE3.squeeze().cpu().numpy()
+                    gt_rel = relative_pose.squeeze().cpu().numpy()
+                    pd_abs = pd_list[-1] @ pd_rel
+                    gt_abs = gt_list[-1] @ gt_rel
+                    # ensure the matrix is SO3 valid (needed for metric computation)
+                    pd_abs[:3, :3] = poseOperator.ensure_so3_v2(pd_abs[:3, :3])
+                    gt_abs[:3, :3] = poseOperator.ensure_so3_v2(gt_abs[:3, :3])
+                    gt_list.append(gt_abs)
+                    pd_list.append(pd_abs)
 
                     # Identity Loss
-                    identity_motion = torch.zeros(estimated_pose_AB.shape[0], estimated_pose_AB.shape[1]).to(DEVICE)
+                    #identity_motion = torch.zeros(estimated_pose_AB_SE3.shape[0], estimated_pose_AB_SE3.shape[1]).to(DEVICE)
+                    identity_motion = torch.eye(4).unsqueeze(0).expand(estimated_pose_AB_SE3.shape[0], -1, -1).to(
+                        DEVICE)
 
                     if standard_identity:
                         # we compute the standard identity loss of the cyclegan
@@ -316,8 +361,10 @@ def train_model(training_dataset_path, testing_dataset_path, num_epoch, batch_si
                         # we compute our custom identity loss
                         identity_fr1 = G_BA(real_fr1, identity_motion)
                         identity_fr2 = G_AB(real_fr2, identity_motion)
-                        _, identity_p1 = PaD_A(identity_fr1, real_fr1)
-                        _, identity_p2 = PaD_B(identity_fr2, real_fr2)
+                        identity_stacked_fr1 = torch.cat([identity_fr1, real_fr1],dim=1)
+                        identity_stacked_fr2 = torch.cat([identity_fr2, real_fr2], dim=1)
+                        identity_p1 = PaD_A(identity_stacked_fr1, task = "pose")
+                        identity_p2 = PaD_B(identity_stacked_fr2, task = "pose")
 
                         total_identity_loss = losses.custom_total_identity_loss(identity_fr1, real_fr1, identity_p1,
                                                                                 identity_motion, identity_fr2, real_fr2,
@@ -325,34 +372,41 @@ def train_model(training_dataset_path, testing_dataset_path, num_epoch, batch_si
                                                                                 weights_identity_loss)
 
                     # GAN loss
-                    fake_fr2 = G_AB(real_fr1, estimated_pose_AB)
-                    fake_fr1 = G_BA(real_fr2, estimated_pose_BA)
-                    loss_GAN = losses.standard_total_GAN_loss(PaD_B(curr_frame=fake_fr2), valid, PaD_A(curr_frame=fake_fr1),
-                                                              valid)
+                    fake_fr2 = G_AB(real_fr1, estimated_pose_AB_SE3)
+                    fake_fr1 = G_BA(real_fr2, estimated_pose_BA_SE3)
+                    curr_frame_fake_2 = torch.cat([fake_fr2, fake_fr2], dim=1)
+                    curr_frame_fake_1 = torch.cat([fake_fr1, fake_fr1], dim=1)
+                    loss_GAN = losses.standard_total_GAN_loss(PaD_B(curr_frame_fake_2, task="discriminator"), valid,
+                                                              PaD_A(curr_frame_fake_1, task="discriminator"), valid)
+
 
                     # Cycle loss
                     if standard_cycle:
                         # we compute the standard cycle loss of the cyclegan
-                        recov_fr1 = G_BA(fake_fr2, estimated_pose_BA)
-                        recov_fr2 = G_AB(fake_fr1, estimated_pose_AB)
+                        recov_fr1 = G_BA(fake_fr2, estimated_pose_BA_SE3)
+                        recov_fr2 = G_AB(fake_fr1, estimated_pose_AB_SE3)
                         total_cycle_loss = losses.standard_total_cycle_loss(recov_fr1, real_fr1, recov_fr2, real_fr2)
                     else:
                         # we compute our custom cycle loss
-                        recov_fr1 = G_BA(fake_fr2, estimated_pose_BA)
-                        recov_fr2 = G_AB(fake_fr1, estimated_pose_AB)
-                        _, recov_P12 = PaD_A(recov_fr1, recov_fr2)
-                        _, recov_P21 = PaD_B(recov_fr2, recov_fr1)
-                        total_cycle_loss = losses.custom_total_cycle_loss(recov_fr1, real_fr1, recov_P12, estimated_pose_AB,
-                                                                          recov_fr2, real_fr2, recov_P21, estimated_pose_BA,
+                        recov_fr1 = G_BA(fake_fr2, estimated_pose_BA_SE3)
+                        recov_fr2 = G_AB(fake_fr1, estimated_pose_AB_SE3)
+                        recov_fr12 = torch.cat([recov_fr1, recov_fr2], dim = 1)
+                        recov_fr21 = torch.cat([recov_fr2, recov_fr1], dim = 1)
+                        recov_P12 = PaD_A(recov_fr12, task = "pose")
+                        recov_P21 = PaD_B(recov_fr21, task = "pose")
+                        total_cycle_loss = losses.custom_total_cycle_loss(recov_fr1, real_fr1, recov_P12, estimated_pose_AB_SE3,
+                                                                          recov_fr2, real_fr2, recov_P21, estimated_pose_BA_SE3,
                                                                           weights_cycle_loss)
 
                     loss_G = loss_GAN + (10.0 * total_cycle_loss) + (5.0 * total_identity_loss)
                     # Evaluate Discriminators
-                    loss_DA = losses.standard_discriminator_loss(PaD_A(prev_frame=real_fr1), valid,
-                                                                 PaD_A(prev_frame=fake_fr1.detach()), fake)
+                    prev_frame_real = torch.cat([real_fr1, real_fr1], dim=1)
+                    prev_frame_fake = torch.cat([fake_fr1.detach(), fake_fr1.detach()], dim=1)
+                    loss_DA = losses.standard_discriminator_loss(PaD_A(prev_frame_real, task='discriminator'), valid,
+                                                                 PaD_A(prev_frame_fake, task='discriminator'), fake)
 
-                    loss_DB = losses.standard_discriminator_loss(PaD_B(curr_frame=real_fr2), valid,
-                                                                 PaD_A(curr_frame=fake_fr2.detach()), fake)
+                    loss_DB = losses.standard_discriminator_loss(PaD_B(prev_frame_real, task='discriminator'), valid,
+                                                                 PaD_B(prev_frame_fake, task='discriminator'), fake)
 
                     # total discriminator loss (not backwarded! -> used only for tracking)
                     loss_D = (loss_DA + loss_DB) / 2
@@ -365,40 +419,39 @@ def train_model(training_dataset_path, testing_dataset_path, num_epoch, batch_si
 
                     num_batches += 1
 
-            # before computing ATE and ARE
-            print(f"pd: {len(pd)}")
-            print(f"gt: {len(gt)}")
-            print(pd)
-            absolute_ground_truth = poseOperator.integrate_relative_poses(gt)
-            absolute_predictions = poseOperator.integrate_relative_poses(pd)
+            # compute ATE, ARE, RRE, RTE
+            # save trajectory in kitti format
+            path_to_tmp_gt = "/mimer/NOBACKUP/groups/snic2022-5-277/gmanni/cyclepose/MPEM/tmp_test_pose/" + id + "_gt.txt"
+            path_to_tmp_pd = "/mimer/NOBACKUP/groups/snic2022-5-277/gmanni/cyclepose/MPEM/tmp_test_pose/" + id + "_pd.txt"
+            txtIO.save_poses_as_kitti(gt_list, path_to_tmp_gt)
+            txtIO.save_poses_as_kitti(pd_list, path_to_tmp_pd)
 
-            # compute ATE and ARE
-            #ate, are = losses.absolute_pose_error(gt, absolute_predictions)
-            ate, are = losses.compute_ARE_and_ATE(absolute_ground_truth, absolute_predictions)
+            # now load trajectories with evo
+            gt_traj = file_interface.read_kitti_poses_file(path_to_tmp_gt)
+            pd_traj = file_interface.read_kitti_poses_file(path_to_tmp_pd)
 
-            # compute RTE and RRE
-            #rre, rte = losses.relative_pose_error(relative_ground_truth, pd)
-            rre, rte = losses.compute_RRE_and_RTE(gt, pd)
+            # align and correct the scale
+            pd_traj.align_origin(gt_traj)
+            pd_traj.align(gt_traj, correct_scale=True)
+
+            data = (gt_traj, pd_traj)
+            ATE_metric.process_data(data)
+            ARE_metric.process_data(data)
+            RTE_metric.process_data(data)
+            RRE_metric.process_data(data)
+
+            ate = ATE_metric.get_statistic(metrics.StatisticsType.rmse)
+            are = ARE_metric.get_statistic(metrics.StatisticsType.rmse)
+            rte = RTE_metric.get_statistic(metrics.StatisticsType.rmse)
+            rre = RRE_metric.get_statistic(metrics.StatisticsType.rmse)
+
+
 
             ATE.append(ate)
             ARE.append(are)
             RRE.append(rre)
             RTE.append(rte)
 
-        '''
-        # before computing ATE and ARE
-        absolute_predictions = poseOperator.integrate_relative_poses(predictions)
-
-        relative_ground_truth = poseOperator.get_relative_poses(ground_truth_pose)
-
-
-
-        # compute ATE and ARE
-        ate, are = losses.absolute_pose_error(ground_truth_pose, absolute_predictions)
-
-        # compute RTE and RRE
-        rre, rte = losses.relative_pose_error(relative_ground_truth, predictions)
-        '''
         ate = 0.0
         are = 0.0
         rre = 0.0
@@ -407,7 +460,7 @@ def train_model(training_dataset_path, testing_dataset_path, num_epoch, batch_si
         for i in range(num_dataset):
             ate += ATE[i]
             are += ARE[i]
-            rre += RTE[i]
+            rre += RRE[i]
             rte += RTE[i]
 
         
@@ -447,6 +500,8 @@ def train_model(training_dataset_path, testing_dataset_path, num_epoch, batch_si
             modelIO.save_pose_model(saving_path_pada, PaD_A, optimizer_PaD_A, training_var, best_model=True)
             modelIO.save_pose_model(saving_path_padb, PaD_B, optimizer_PaD_B, training_var, best_model=True)
         else:
+            pass
+            '''
             # we save the model as a normal one:
             print("[INFO]: saving the models")
             saving_path_gab = path_to_the_model + id + "_gen_ab.pth"
@@ -465,6 +520,7 @@ def train_model(training_dataset_path, testing_dataset_path, num_epoch, batch_si
             # save pose and discriminator model
             modelIO.save_pose_model(saving_path_pada, PaD_A, optimizer_PaD_A, training_var, best_model=False)
             modelIO.save_pose_model(saving_path_padb, PaD_B, optimizer_PaD_B, training_var, best_model=False)
+            '''
 
 
 
@@ -501,6 +557,9 @@ parser.add_argument("--id", type=str)
 parser.add_argument("--id_wandb_run", type=str)
 
 args = parser.parse_args()
+
+if not os.path.exists(args.path_to_the_model):
+    os.mkdir(args.path_to_the_model)
 
 train_model(
     args.training_dataset_path,

@@ -10,6 +10,11 @@ This file provide the metrics used for evaluating the pipeline
 # Computational Module
 import numpy as np
 
+# Metric lib
+from evo.core import metrics
+from evo.core import units
+from evo.tools import file_interface
+
 class MDEM_Metrics:
     '''
     This Class provide the metrics used for evaluating the Monocular Depth Estimation Module (MDEM)
@@ -116,91 +121,51 @@ class DepthMapMetric:
 
 class MPEM_Metrics:
     '''
-    This class provides function used to evaluatethe Monocular Pose Estimation Module (MPE)
+    This class provides function used to evaluate the Monocular Pose Estimation Module (MPE)
     '''
 
     def __init__(self):
-        pass
+        # initialize metrics object
+        self.ATE_metric = metrics.APE(metrics.PoseRelation.translation_part)
+        self.RTE_metric = metrics.RPE(metrics.PoseRelation.translation_part)
+        self.RRE_metric = metrics.RPE(metrics.PoseRelation.rotation_angle_deg)
 
-    def compute_ARE_and_ATE(self, ground_truth, predictions):
-        """
-        Computes the ATE and ARE.
+    def read_trajectory(self, path_to_trajectory):
+        return file_interface.read_kitti_poses_file(path_to_trajectory)
 
-        Parameters:
-        ground_truth: List of numpy arrays representing the ground truth poses.
-        predictions: List of numpy arrays representing the predicted poses.
+    def compute_pose_metrics(self, path_to_gt_tr, path_to_pred_tr):
+        # step 0: load the trajectory
+        gt_tr = self.read_trajectory(path_to_gt_tr)
+        pred_tr = self.read_trajectory(path_to_pred_tr)
 
-        Returns:
-        ate: Absolute Trajectory Error
-        are: Absolute Rotation Error
-        """
-        print(f"ground_truth: {len(ground_truth)}")
-        print(f"predictions: {len(predictions)}")
-        assert len(ground_truth) == len(predictions), "Ground truth and predictions must have the same length"
+        # align and correct the scale
+        pred_tr.align_origin(gt_tr)
+        pred_tr.align(gt_tr, correct_scale=True)
 
-        ate_sum = 0.0
-        are_sum = 0.0
+        # compute ATE, RTE & RRE
+        data = (gt_tr, pred_tr)
+        self.ATE_metric.process_data(data)
+        self.RTE_metric.process_data(data)
+        self.RRE_metric.process_data(data)
 
-        for gt, pred in zip(ground_truth, predictions):
-            # Ensure the pose matrices are 4x4 (assuming they are homogeneous matrices)
-            assert gt.shape == (4, 4) and pred.shape == (4, 4), "Poses should be 4x4 matrices"
+        # extract rmse and std
+        ate_rmse = self.ATE_metric.get_statistic(metrics.StatisticsType.rmse)
+        rte_rmse = self.RTE_metric.get_statistic(metrics.StatisticsType.rmse)
+        rre_rmse = self.RRE_metric.get_statistic(metrics.StatisticsType.rmse)
+        ate_std = self.ATE_metric.get_statistic(metrics.StatisticsType.std)
+        rte_std = self.RTE_metric.get_statistic(metrics.StatisticsType.std)
+        rre_std = self.RRE_metric.get_statistic(metrics.StatisticsType.std)
 
-            # Compute translational error
-            trans_diff = gt[:3, 3] - pred[:3, 3]
-            ate_sum += np.linalg.norm(trans_diff)
+        results = {
+            "ATE": (ate_rmse, ate_std),
+            "RTE": (rte_rmse, rte_std),
+            "RRE": (rre_rmse, rre_std),
+        }
 
-            # Compute rotational error
-            R_diff = np.dot(gt[:3, :3], pred[:3, :3].T)
-            trace = np.trace(R_diff)
-            angular_error_rad = np.arccos(max(min((trace - 1) / 2, 1), -1))
-            are_sum += angular_error_rad
+        return results
 
-        ATE = ate_sum / len(ground_truth)
-        ARE = are_sum / len(ground_truth)
 
-        return ATE, ARE
 
-    def compute_RRE_and_RTE(self, ground_truth, predictions, delta=1):
-        """
-        Compute the RRE and RTE for a list of poses.
 
-        Args:
-        - ground_truth: List of numpy arrays representing the ground truth poses.
-        - predictions: List of numpy arrays representing the predicted poses.
-        - delta: Time difference for relative pose computations.
 
-        Returns:
-        - RRE: Relative Rotation Error.
-        - RTE: Relative Trajectory Error.
-        """
-
-        assert len(ground_truth) == len(predictions), "Ground truth and predictions must have the same length"
-
-        rre_sum = 0.0
-        rte_sum = 0.0
-        count = 0
-
-        for i in range(len(ground_truth) - delta):
-            gt_rel = np.dot(np.linalg.inv(ground_truth[i]), ground_truth[i + delta])
-            pred_rel = np.dot(np.linalg.inv(predictions[i]), predictions[i + delta])
-
-            # Ensure the pose matrices are 4x4 (assuming they are homogeneous matrices)
-            assert gt_rel.shape == (4, 4) and pred_rel.shape == (4, 4), "Relative poses should be 4x4 matrices"
-
-            # Compute translational error for relative pose
-            trans_diff = gt_rel[:3, 3] - pred_rel[:3, 3]
-            rte_sum += np.linalg.norm(trans_diff)
-
-            # Compute rotational error for relative pose
-            R_diff = np.dot(gt_rel[:3, :3], pred_rel[:3, :3].T)
-            trace = np.trace(R_diff)
-            angular_error_rad = np.arccos(max(min((trace - 1) / 2, 1), -1))
-            rre_sum += angular_error_rad
-
-            count += 1
-
-        RRE = rre_sum / count
-        RTE = rte_sum / count
-
-        return RRE, RTE
 

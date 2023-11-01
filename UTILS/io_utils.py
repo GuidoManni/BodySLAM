@@ -241,8 +241,12 @@ class CSVIO:
                 writer.writeheader()
                 writer.writerow(metrics)
         else:
-            for keys in metrics.keys():
-                headers.append(keys)
+            try:
+                for keys in metrics.keys():
+                    headers.append(keys)
+            except:
+                for keys in metrics[0].keys():
+                    headers.append(keys)
 
             with open(saving_path, 'w', newline='') as csvfile:
                 writer = csv.DictWriter(csvfile, fieldnames=headers)
@@ -261,7 +265,7 @@ class TXTIO:
         corrected_poses = []
         for pose in poses_list:
             corrected_pose = np.copy(pose)
-            corrected_pose[:3, :3] = self.poseOperator.ensure_so3(pose[:3, :3])
+            #corrected_pose[:3, :3] = self.poseOperator.ensure_so3(pose[:3, :3])
             corrected_poses.append(corrected_pose)
 
         # Save the poses to a .txt file with each pose on one line

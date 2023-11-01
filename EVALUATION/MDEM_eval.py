@@ -187,7 +187,6 @@ def compute_metrics_for(dataset_type, dataset_paths, path_to_prediction, results
 
             elif dataset_type == "SCARED":
                 # since the SCARED dataset provide sparse depth map we need to create a mask containing only non zero valuse
-                print(np.amax(ground_truth))
                 non_zero_px = ground_truth > 0
                 ground_truth = ground_truth[non_zero_px]
                 prediction = prediction[non_zero_px]
@@ -322,9 +321,9 @@ path_to_dataset = "/home/gvide/Dataset/SCARED/"
 #saving_path = "/home/gvide/Scrivania/BodySLAM Results/MDEM Validation/Endo_Depth/Depth_map_generated_by_Endo_Depth/dp_endo_depth_on_endoslam/"
 
 # Path to depth prediction for SCARED
-saving_path = "/home/gvide/Scrivania/BodySLAM Results/MDEM Validation/BodySLAM/Depth_Map_Generated_with_Zoe/SCARED_zoe/"
+#saving_path = "/home/gvide/Scrivania/BodySLAM Results/MDEM Validation/BodySLAM/Depth_Map_Generated_with_Zoe/SCARED_zoe/"
 #saving_path = "/home/gvide/Scrivania/BodySLAM Results/MDEM Validation/Endo_Depth/Depth_map_generated_by_Endo_Depth/dp_endo_depth_on_SCARED"
-#saving_path = "/home/gvide/Scrivania/BodySLAM Results/MDEM Validation/EndoSfMLearner/depth_map_generated_by_EndoSFMLearner/EndoSfMLearner_results_SCARED/"
+saving_path = "/home/gvide/Scrivania/BodySLAM Results/MDEM Validation/EndoSfMLearner/depth_map_generated_by_EndoSFMLearner/EndoSfMLearner_results_SCARED/"
 
 
 # Path to results for Hamlyn
@@ -337,12 +336,12 @@ saving_path = "/home/gvide/Scrivania/BodySLAM Results/MDEM Validation/BodySLAM/D
 #results_path = "/home/gvide/Scrivania/BodySLAM Results/MDEM Validation/Endo_Depth/results_endoslam_endo_depth"
 
 # Path to results for SCARED
-results_path = "/home/gvide/Scrivania/BodySLAM Results/MDEM Validation/BodySLAM/SCARED_results/"
+#results_path = "/home/gvide/Scrivania/BodySLAM Results/MDEM Validation/BodySLAM/SCARED_results/"
 #results_path = "/home/gvide/Scrivania/BodySLAM Results/MDEM Validation/Endo_Depth/results_scared_endo_depth/"
-#results_path = "/home/gvide/Scrivania/BodySLAM Results/MDEM Validation/EndoSfMLearner/SCARED_results/"
+results_path = "/home/gvide/Scrivania/BodySLAM Results/MDEM Validation/EndoSfMLearner/SCARED_results/"
 
 
 
-evaluate_MDEM_on(dataset_type, path_to_dataset, saving_path, results_path, True)
+evaluate_MDEM_on(dataset_type, path_to_dataset, saving_path, results_path, False)
 #read_Hamlyn("/home/gvide/Dataset/Hamlyn_Dataset")
 

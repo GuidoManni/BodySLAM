@@ -15,16 +15,91 @@ import torch.nn as nn
 # Numerical lib
 import numpy as np
 
+# internal lIB
+from UTILS.geometry_utils import PoseOperator
+
 class TrainingLoss:
     def __init__(self):
-        '''
-        The init will automatically initialize all the loss function and pass it to the proper device
-        '''
-        # Losses employed during training
-        self.standard_identity_loss = nn.L1Loss()
-        self.standard_cycle_loss = nn.L1Loss()
-        self.standard_GAN_loss = nn.MSELoss()
-        self.standard_Discr_loss = nn.MSELoss()
+         '''
+         The init will automatically initialize all the loss function and pass it to the proper device
+         '''
+         # Losses employed during training
+         self.standard_identity_loss = nn.L1Loss()
+         self.standard_cycle_loss = nn.L1Loss()
+         self.standard_GAN_loss = nn.MSELoss()
+         self.standard_Discr_loss = nn.MSELoss()
+         self.PO = PoseOperator()
+         self.translation_loss = nn.MSELoss()
+
+    def _sqrt_positive_part(self, x: torch.Tensor) -> torch.Tensor:
+        """
+        Returns torch.sqrt(torch.max(0, x))
+        but with a zero subgradient where x is 0.
+        """
+        ret = torch.zeros_like(x)
+        positive_mask = x > 0
+        ret[positive_mask] = torch.sqrt(x[positive_mask])
+        return ret
+
+    def motion_matrix_to_pose7(self, matrix: torch.Tensor) -> torch.Tensor:
+        """
+        Convert 4x4 motion matrix to a 7-element vector with 3 translation values and 4 quaternion values.
+
+        Args:
+            matrix: Motion matrices as tensor of shape (batch, 4, 4).
+
+        Returns:
+            Pose vector as tensor of shape (batch, 7).
+        """
+        if matrix.size(-1) != 4 or matrix.size(-2) != 4:
+            raise ValueError(f"Invalid motion matrix shape {matrix.shape}.")
+
+        # Extract translation (assuming matrix is in homogeneous coordinates)
+        translation = matrix[..., :3, 3]
+
+        # Extract rotation
+        rotation = matrix[..., :3, :3]
+
+        # Convert rotation matrix to quaternion
+        quaternion = self.PO.matrix_to_quaternion(rotation)
+
+        # Combine translation and quaternion to get 7-element pose vector
+        # pose7 = torch.cat([translation, quaternion], dim=-1)
+
+        return translation, quaternion
+    def geodesic_loss(self, q1: torch.Tensor, q2: torch.Tensor) -> torch.Tensor:
+        dot_product = torch.sum(q1 * q2, dim=-1)
+        return torch.mean(torch.arccos(2 * dot_product * dot_product - 1))
+
+    def se3_to_lie(self, T):
+        # Extract rotation matrix and translation vector
+        R = T[..., :3, :3]
+        t = T[..., :3, 3]
+
+        # Compute the axis-angle representation for the rotation
+        trace = R[..., 0, 0] + R[..., 1, 1] + R[..., 2, 2]
+
+        # Clamp trace to ensure stability for acos operation
+        clamped_trace = torch.clamp(trace, -1 + 1e-5, 1 - 1e-5)
+        theta = torch.acos((clamped_trace - 1) / 2)
+
+        small_val = 1e-6
+        clamped_theta = torch.where(theta < small_val, torch.ones_like(theta) * small_val, theta)
+
+        # Compute the omega (axis-angle representation)
+        omega = 1. / (2. * torch.sin(clamped_theta).unsqueeze(-1)) * torch.stack([
+            R[..., 2, 1] - R[..., 1, 2],
+            R[..., 0, 2] - R[..., 2, 0],
+            R[..., 1, 0] - R[..., 0, 1]
+        ], dim=-1)
+
+        # Use the previously computed theta to scale the omega
+        omega = omega * clamped_theta.unsqueeze(-1)
+
+        # Stack the axis-angle representation and translation vector
+        xi = torch.cat([omega, t], dim=-1)
+
+        return xi
 
     def standard_criterion_identity_loss(self, fake_of_the_real, real):
         '''
@@ -86,10 +161,14 @@ class TrainingLoss:
         Return:
         - custom_total_cycle_loss
         '''
+        #identity_PA = self.se3_to_lie(identity_PA)
+        #real_identity_PA = self.se3_to_lie(real_identity_PA)
+        #identity_PB = self.se3_to_lie(identity_PB)
+        #real_identity_PB = self.se3_to_lie(real_identity_PB)
         loss_identity_frA = self.standard_criterion_identity_loss(identity_frA, real_frA)
         loss_identity_frB = self.standard_criterion_identity_loss(identity_frB, real_frB)
-        loss_identity_PA = self.standard_criterion_identity_loss(identity_PA, real_identity_PA)
-        loss_identity_PB = self.standard_criterion_identity_loss(identity_PB, real_identity_PB)
+        loss_identity_PA = self.cycle_loss_for_pose(identity_PA, real_identity_PA)
+        loss_identity_PB = self.cycle_loss_for_pose(identity_PB, real_identity_PB)
 
         custom_total_identity_loss = (weights[0] * loss_identity_frA + weights[1] * loss_identity_frB + weights[2] * loss_identity_PA + weights[3] * loss_identity_PB)
 
@@ -109,9 +188,21 @@ class TrainingLoss:
         - standard_cycle_loss
         '''
 
+        # original loss function
         standard_cycle_loss = self.standard_cycle_loss(recov, real)
 
         return standard_cycle_loss
+
+    def cycle_loss_for_pose(self, recov, real):
+        # convert the motion matrix in a pose vector
+        recov_t, recov_r = self.motion_matrix_to_pose7(recov)
+        real_t, real_r = self.motion_matrix_to_pose7(real)
+
+        # now we compute the loss
+        t_loss = self.translation_loss(recov_t, real_t)
+        r_loss = self.geodesic_loss(recov_r, real_r)
+
+        return (t_loss + r_loss)/2
 
     def standard_total_cycle_loss(self, recov_frA, real_frA, recov_frB, real_frB):
         '''
@@ -156,11 +247,14 @@ class TrainingLoss:
         Return:
         - custom_total_cycle_loss
         '''
-
+        #recov_PA = self.se3_to_lie(recov_PA)
+        #real_PA = self.se3_to_lie(real_PA)
+        #recov_PB = self.se3_to_lie(recov_PB)
+        #real_PB = self.se3_to_lie(real_PB)
         loss_cycle_frA = self.standard_criterion_cycle_loss(recov_frA, real_frA)
         loss_cycle_frB = self.standard_criterion_cycle_loss(recov_frB, real_frB)
-        loss_cycle_PA = self.standard_criterion_cycle_loss(recov_PA, real_PA)
-        loss_cycle_PB = self.standard_criterion_cycle_loss(recov_PB, real_PB)
+        loss_cycle_PA = self.cycle_loss_for_pose(recov_PA, real_PA)
+        loss_cycle_PB = self.cycle_loss_for_pose(recov_PB, real_PB)
 
         custom_total_cycle_loss = (weights[0] * loss_cycle_frA + weights[1] * loss_cycle_frB + weights[2] * loss_cycle_PA + weights[3] * loss_cycle_PB)
 

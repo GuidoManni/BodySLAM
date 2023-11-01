@@ -16,7 +16,7 @@ from torchvision import transforms
 
 # Internal Modules
 from UTILS.io_utils import FrameIO, ModelIO
-from MPEM.architecture import MultiTaskModel
+from MPEM.architecture_old import MultiTaskModel
 
 # Computational Lib
 import numpy as np
@@ -25,6 +25,7 @@ class MPEMInterface:
     # This class call/initialize the instances to interface with the MPE
 
     def __init__(self, path_to_model):
+
         # step 2: call other classes here
         self.frameIO = FrameIO()
         self.modelIO = ModelIO()
@@ -91,8 +92,9 @@ class MPEMInterface:
 
         frame1 = frame1.unsqueeze(0)
         frame2 = frame2.unsqueeze(0)
+        frame12 = torch.cat([frame1, frame2], dim=1)
         # let's infer the pose
-        motion_matrix_SE3, _ = self.pose_model(frame1, frame2)
+        motion_matrix_SE3, _ = self.pose_model(frame12, task='pose')
 
         return motion_matrix_SE3.squeeze().detach().numpy()
 
