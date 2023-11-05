@@ -67,9 +67,15 @@ class TrainingLoss:
         # pose7 = torch.cat([translation, quaternion], dim=-1)
 
         return translation, quaternion
+
+    def chordal_loss(self, q1, q2):
+        loss = torch.norm(q1/torch.norm(q1, dim=1, keepdim=True) - q2/torch.norm(q2, dim=1, keepdim=True))
+        return loss
     def geodesic_loss(self, q1: torch.Tensor, q2: torch.Tensor) -> torch.Tensor:
         dot_product = torch.sum(q1 * q2, dim=-1)
-        return torch.mean(torch.arccos(2 * dot_product * dot_product - 1))
+        cosine_of_angle = 2 * dot_product * dot_product - 1
+        clamped_cosine_angle = torch.clamp(cosine_of_angle, -1.0 + 1e-6, 1.0 - 1e-6)
+        return torch.mean(clamped_cosine_angle)
 
     def se3_to_lie(self, T):
         # Extract rotation matrix and translation vector
@@ -200,7 +206,8 @@ class TrainingLoss:
 
         # now we compute the loss
         t_loss = self.translation_loss(recov_t, real_t)
-        r_loss = self.geodesic_loss(recov_r, real_r)
+        #r_loss = self.geodesic_loss(recov_r, real_r)
+        r_loss = self.chordal_loss(recov_r, real_r)
 
         return (t_loss + r_loss)/2
 
