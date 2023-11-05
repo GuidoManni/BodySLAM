@@ -20,6 +20,8 @@ from scipy.spatial.transform import Rotation as R
 # Computer Vision lib
 import cv2
 
+import sys
+
 
 
 class LieEuclideanMapper:
@@ -196,7 +198,11 @@ class PoseOperator:
         """
         Projects a 3x3 matrix to the closest SO(3) matrix using an alternative method.
         """
-        U, _, Vt = np.linalg.svd(matrix)
+        try:
+            U, _, Vt = np.linalg.svd(matrix)
+        except:
+            print(matrix)
+            sys.exit()
 
         # Creating the intermediate diagonal matrix
         D = np.eye(3)
