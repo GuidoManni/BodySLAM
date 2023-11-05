@@ -34,7 +34,7 @@ class PoseDatasetLoader(Dataset):
     '''
     Class used by the Pytorch Dataloader to load the dataset
     '''
-    def __init__(self, list_of_frames, list_of_absolute_poses = None, dataset_type = None, size_img = 128):
+    def __init__(self, list_of_frames, list_of_depth, list_of_absolute_poses = None, dataset_type = None, size_img = 128):
         '''
         Init function
 
@@ -46,10 +46,15 @@ class PoseDatasetLoader(Dataset):
 
         '''
         self.frameIO = FrameIO()
-        self.list_of_frames = list_of_frames
+        self.list_of_frames = sorted(list_of_frames)
+        self.list_of_depths = sorted(list_of_depth)
         self.list_of_absolute_poses = list_of_absolute_poses
         self.dataset_type = dataset_type
         self.size_img = size_img
+        self.sequential_transform_dp = transforms.Compose([
+            transforms.Resize(self.size_img),
+            transforms.Lambda(self.depth_map_to_tensor),
+        ])
         if self.dataset_type == "UCBM":
             self.sequential_transform = transforms.Compose([
                 transforms.Resize(self.size_img), # resize the img to the desired size
@@ -67,11 +72,19 @@ class PoseDatasetLoader(Dataset):
         else:
             warnings.warn("[WARNING]: NO Dataset Selected (from UCBM/EndoSlam)")
             sys.exit()
-        self.midas = torch.hub.load("intel-isl/MiDaS", "MiDaS_small")
-        self.midas_transforms = torch.hub.load("intel-isl/MiDaS", "transforms")
-        self.midas_transform = self.midas_transforms.small_transform
-        self.device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
 
+    def depth_map_to_tensor(self, depth_map):
+        # Convert the loaded depth map into a numpy array of type float32
+        depth_array = np.array(depth_map, dtype=np.float32)
+
+        # Normalize to a range between 0 and 1
+        min_val = np.min(depth_array)
+        max_val = np.max(depth_array)
+        normalized_depth_array = (depth_array - min_val) / (
+                    max_val - min_val + 1e-7)  # Adding a small value to prevent division by zero
+
+        # Convert the normalized numpy.float32 array into a PyTorch tensor
+        return torch.tensor(normalized_depth_array)
 
     def __len__(self):
         return len(self.list_of_frames)
@@ -94,25 +107,6 @@ class PoseDatasetLoader(Dataset):
 
         return SE3_relative
 
-    def compute_dp(self, path_to_img):
-        img = cv2.imread(path_to_img)
-        img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
-
-        input_batch = self.midas_transform(img).to(self.device)
-
-        with torch.no_grad():
-            prediction = self.midas(input_batch)
-
-            prediction = torch.nn.functional.interpolate(
-                prediction.unsqueeze(1),
-                size=img.shape[:2],
-                mode="bicubic",
-                align_corners=False,
-            ).squeeze()
-
-        output = prediction.cpu()
-
-        return output
 
     def __getitem__(self, idx):
         # Check if we are not at the last index
@@ -120,22 +114,24 @@ class PoseDatasetLoader(Dataset):
             if idx < len(self.list_of_frames) - 1:
                 frame1 = self.frameIO.load_p_img(self.list_of_frames[idx])
                 frame2 = self.frameIO.load_p_img(self.list_of_frames[idx + 1])
-                dp1 = self.compute_dp(self.list_of_frames[idx])
-                dp2 = self.compute_dp(self.list_of_frames[idx + 1])
+                dp1 = self.frameIO.load_p_img(self.list_of_depths[idx])
+                dp2 = self.frameIO.load_p_img(self.list_of_depths[idx + 1])
                 absolute_pose1 = self.list_of_absolute_poses[idx]
                 absolute_pose2 = self.list_of_absolute_poses[idx + 1]
             else:
                 # If we are at the last index, return the last and second last frames
                 frame1 = self.frameIO.load_p_img(self.list_of_frames[-2])  # second last
                 frame2 = self.frameIO.load_p_img(self.list_of_frames[-1])  # last
-                dp1 = self.compute_dp(self.list_of_frames[-2])
-                dp2 = self.compute_dp(self.list_of_frames[-1])
+                dp1 = self.frameIO.load_p_img(self.list_of_depths[-2])
+                dp2 = self.frameIO.load_p_img(self.list_of_depths[-1])
                 absolute_pose1 = self.list_of_absolute_poses[-2]  # second last
                 absolute_pose2 = self.list_of_absolute_poses[-1]  # last
 
             # preprocess the input
             input_fr1 = self.sequential_transform(frame1)
             input_fr2 = self.sequential_transform(frame2)
+            input_dp1 = self.sequential_transform_dp(dp1)
+            input_dp2 = self.sequential_transform_dp(dp2)
 
             # get the ground truth poses
             relative_pose = self.compute_relative_pose(absolute_pose1, absolute_pose2)
@@ -147,23 +143,25 @@ class PoseDatasetLoader(Dataset):
             if idx < len(self.list_of_frames) - 1:
                 frame1 = self.frameIO.load_p_img(self.list_of_frames[idx])
                 frame2 = self.frameIO.load_p_img(self.list_of_frames[idx + 1])
-                dp1 = self.compute_dp(self.list_of_frames[idx])
-                dp2 = self.compute_dp(self.list_of_frames[idx + 1])
+                dp1 = self.frameIO.load_p_img(self.list_of_depths[idx])
+                dp2 = self.frameIO.load_p_img(self.list_of_depths[idx + 1])
             else:
                 # If we are at the last index, return the last and second last frames
                 frame1 = self.frameIO.load_p_img(self.list_of_frames[-2])  # second last
                 frame2 = self.frameIO.load_p_img(self.list_of_frames[-1])  # last
-                dp1 = self.compute_dp(self.list_of_frames[-2])
-                dp2 = self.compute_dp(self.list_of_frames[-1])
+                dp1 = self.frameIO.load_p_img(self.list_of_depths[-2])
+                dp2 = self.frameIO.load_p_img(self.list_of_depths[-1])
 
             target = -1 # for the UCBM we don't have the ground truth, this is just a place holder
 
             input_fr1 = self.sequential_transform(frame1)
             input_fr2 = self.sequential_transform(frame2)
+            input_dp1 = self.sequential_transform_dp(dp1)
+            input_dp2 = self.sequential_transform_dp(dp2)
 
 
 
-        return {"rgb1": input_fr1, "rgb2": input_fr2, "dp1": dp1, "dp2": dp2, target: "target"}
+        return {"rgb1": input_fr1, "rgb2": input_fr2, "dp1": input_dp1, "dp2": input_dp2, "target": target}
 
 class DatasetsIO:
     def __init__(self):
@@ -287,9 +285,11 @@ class DatasetsIO:
             i_folder = 0
 
         # get a list of the content inside the ith folder
-        training_frames = self.list_dir_with_relative_path_to(root_ucbm[i_folder], mode = 'file', extension='.jpg', filter_by_word='dp', revert_filter=True)
-
-        training_dataset = PoseDatasetLoader(training_frames, dataset_type="UCBM")
+        rgb_folder = os.path.join(root_ucbm[i_folder], "rgb")
+        depth_folder = os.path.join(root_ucbm[i_folder], "depth")
+        training_frames = self.list_dir_with_relative_path_to(rgb_folder, mode = 'file', extension='.jpg', filter_by_word='dp', revert_filter=True)
+        training_depth = self.list_dir_with_relative_path_to(depth_folder, mode='file', extension='.png')
+        training_dataset = PoseDatasetLoader(training_frames, training_depth, dataset_type="UCBM")
         train_loader = DataLoader(training_dataset, batch_size=batch_size, shuffle=False, num_workers = num_worker, pin_memory=True)
 
         return train_loader, i_folder
@@ -308,15 +308,18 @@ class DatasetsIO:
         Return:
         - test_loader
         '''
-
-        testing_frames = self.list_dir_with_relative_path_to(root_endoslam[i], mode='file',
+        rgb_folder = os.path.join(root_endoslam[i], "rgb")
+        depth_folder = os.path.join(root_endoslam[i], "depth")
+        testing_frames = self.list_dir_with_relative_path_to(rgb_folder, mode='file',
                                                         extension=".jpg", filter_by_word="dp", revert_filter=True)
+        testing_depths = self.list_dir_with_relative_path_to(depth_folder, mode='file', extension='.png')
+
         testing_poses_path_xlsx = self.list_dir_with_relative_path_to(root_endoslam[i], mode="file", extension=".xlsx")
         print(testing_poses_path_xlsx)
 
         testing_poses = self.xlsxIO.read_xlsx_pose_file(testing_poses_path_xlsx[0])
 
-        testing_dataset = PoseDatasetLoader(testing_frames, testing_poses, dataset_type="EndoSlam")
+        testing_dataset = PoseDatasetLoader(testing_frames, testing_depths, testing_poses, dataset_type="EndoSlam")
         test_loader = DataLoader(testing_dataset,
                                  batch_size=batch_size,
                                  shuffle=False,
