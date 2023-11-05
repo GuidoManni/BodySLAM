@@ -289,7 +289,7 @@ class MultiTaskModel(nn.Module):
         )
 
         self.hidden_size = 512
-        self.num_layers_rot = 2
+        self.num_layers_rot = 1
         self.num_layers_trans = 1
 
         self.lstm_translation = nn.LSTM(self.hidden_size, self.hidden_size, self.num_layers_trans, dropout=0.1, batch_first=True)
@@ -407,7 +407,7 @@ class ConditionalGenerator(nn.Module):
 
         # Output Layer
         residual_layers += [nn.ReflectionPad2d(3),
-                            nn.Conv2d(out_features, 3, 7),
+                            nn.Conv2d(out_features, 4, 7),
                             nn.Tanh()
                             ]
 
