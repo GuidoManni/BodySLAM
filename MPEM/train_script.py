@@ -156,10 +156,14 @@ def train_model(training_dataset_path, testing_dataset_path, num_epoch, batch_si
         num_batches = 0
 
         for batch, data in enumerate(train_loader):
-            #real_fr1 = data["rgb1"].to(DEVICE)
-            #real_fr2 = data["rgb2"].to(DEVICE)
-            real_fr1 = data["dp1"].to(DEVICE)
-            real_fr2 = data["dp2"].to(DEVICE)
+            real_rgb1 = data["rgb1"]
+            real_rgb2 = data["rgb2"]
+            real_dp1 = data["dp1"].unsqueeze(1)
+            real_dp2 = data["dp2"].unsqueeze(1)
+
+            real_fr1 = torch.cat([real_rgb1, real_dp1], dim=1).to(DEVICE)
+            real_fr2 = torch.cat([real_rgb2, real_dp2], dim=1).to(DEVICE)
+
 
 
             valid = torch.Tensor(np.ones((real_fr1.size(0), *PaD_shape.output_shape))).to(DEVICE)  # requires_grad = False. Default.
@@ -175,10 +179,8 @@ def train_model(training_dataset_path, testing_dataset_path, num_epoch, batch_si
 
 
             # Estimate the pose
-            stacked_fr1_dp1 = torch.cat([real_fr1, dp1])
-            stacked_fr2_dp2 = torch.cat([real_fr2, dp2])
-            stacked_frame12 = torch.cat([stacked_fr1_dp1, stacked_fr2_dp2], dim=1)
-            stacked_frame21 = torch.cat([stacked_fr2_dp2, stacked_fr1_dp1], dim=1)
+            stacked_frame12 = torch.cat([real_fr1, real_fr2], dim=1)
+            stacked_frame21 = torch.cat([real_fr2, real_fr1], dim=1)
             estimated_pose_AB_SE3 = PaD_B(stacked_frame12, task = "pose")
             estimated_pose_BA_SE3 = PaD_A(stacked_frame21, task = "pose")
 
@@ -202,8 +204,8 @@ def train_model(training_dataset_path, testing_dataset_path, num_epoch, batch_si
                 identity_fr2 = G_AB(real_fr2, identity_motion)
                 identity_stacked_fr1 = torch.cat([identity_fr1, real_fr1], dim = 1)
                 identity_stacked_fr2 = torch.cat([identity_fr2, real_fr2], dim=1)
-                identity_p1 = PaD_A(identity_stacked_fr1, task = "pose")
-                identity_p2 = PaD_B(identity_stacked_fr2, task = "pose")
+                identity_p1 = PaD_B(identity_stacked_fr1, task = "pose")
+                identity_p2 = PaD_A(identity_stacked_fr2, task = "pose")
 
                 total_identity_loss = losses.custom_total_identity_loss(identity_fr1, real_fr1, identity_p1, identity_motion, identity_fr2, real_fr2, identity_p2, identity_motion, weights_identity_loss)
 
@@ -228,8 +230,8 @@ def train_model(training_dataset_path, testing_dataset_path, num_epoch, batch_si
                 recov_fr2 = G_AB(fake_fr1, estimated_pose_AB_SE3)
                 recov_fr12 = torch.cat([recov_fr1, recov_fr2], dim = 1)
                 recov_fr21 = torch.cat([recov_fr2, recov_fr1], dim=1)
-                recov_P12 = PaD_A(recov_fr12, task = "pose")
-                recov_P21 = PaD_B(recov_fr21, task = "pose")
+                recov_P12 = PaD_B(recov_fr12, task = "pose")
+                recov_P21 = PaD_A(recov_fr21, task = "pose")
                 total_cycle_loss = losses.custom_total_cycle_loss(recov_fr1, real_fr1, recov_P12, estimated_pose_AB_SE3, recov_fr2, real_fr2, recov_P21, estimated_pose_BA_SE3, weights_cycle_loss)
 
             loss_G = loss_GAN + (10.0 * total_cycle_loss) + (5.0 * total_identity_loss)
@@ -315,14 +317,16 @@ def train_model(training_dataset_path, testing_dataset_path, num_epoch, batch_si
 
             with torch.no_grad():
                 for batch, data in enumerate(testing_loader):
-                    #real_fr1 = data["rgb1"].to(DEVICE)
-                    #real_fr2 = data["rgb2"].to(DEVICE)
-                    real_fr1 = data["dp1"].to(DEVICE)
-                    real_fr2 = data["dp2"].to(DEVICE)
+                    real_rgb1 = data["rgb1"]
+                    real_rgb2 = data["rgb2"]
+                    real_dp1 = data["dp1"].unsqueeze(1)
+                    real_dp2 = data["dp2"].unsqueeze(1)
                     pose_fr1 = data["target"][0].to(DEVICE).float()
-                    pose_fr2 = data["target"][0].to(DEVICE).float()
-                    relative_pose = data["target"][0].to(DEVICE).float()
+                    pose_fr2 = data["target"][1].to(DEVICE).float()
+                    relative_pose = data["target"][2].to(DEVICE).float()
 
+                    real_fr1 = torch.cat([real_rgb1, real_dp1], dim=1).to(DEVICE)
+                    real_fr2 = torch.cat([real_rgb2, real_dp2], dim=1).to(DEVICE)
                     # Evaluate GAN & POSE
 
                     # Adversarial ground truths
@@ -363,8 +367,8 @@ def train_model(training_dataset_path, testing_dataset_path, num_epoch, batch_si
                         identity_fr2 = G_AB(real_fr2, identity_motion)
                         identity_stacked_fr1 = torch.cat([identity_fr1, real_fr1],dim=1)
                         identity_stacked_fr2 = torch.cat([identity_fr2, real_fr2], dim=1)
-                        identity_p1 = PaD_A(identity_stacked_fr1, task = "pose")
-                        identity_p2 = PaD_B(identity_stacked_fr2, task = "pose")
+                        identity_p1 = PaD_B(identity_stacked_fr1, task = "pose")
+                        identity_p2 = PaD_A(identity_stacked_fr2, task = "pose")
 
                         total_identity_loss = losses.custom_total_identity_loss(identity_fr1, real_fr1, identity_p1,
                                                                                 identity_motion, identity_fr2, real_fr2,
@@ -392,8 +396,8 @@ def train_model(training_dataset_path, testing_dataset_path, num_epoch, batch_si
                         recov_fr2 = G_AB(fake_fr1, estimated_pose_AB_SE3)
                         recov_fr12 = torch.cat([recov_fr1, recov_fr2], dim = 1)
                         recov_fr21 = torch.cat([recov_fr2, recov_fr1], dim = 1)
-                        recov_P12 = PaD_A(recov_fr12, task = "pose")
-                        recov_P21 = PaD_B(recov_fr21, task = "pose")
+                        recov_P12 = PaD_B(recov_fr12, task = "pose")
+                        recov_P21 = PaD_A(recov_fr21, task = "pose")
                         total_cycle_loss = losses.custom_total_cycle_loss(recov_fr1, real_fr1, recov_P12, estimated_pose_AB_SE3,
                                                                           recov_fr2, real_fr2, recov_P21, estimated_pose_BA_SE3,
                                                                           weights_cycle_loss)
@@ -548,7 +552,7 @@ parser.add_argument("--load_model", type=int, help="Flag to indicate whether to 
 
 parser.add_argument("--num_worker", type=int, default=10, help="Number of workers (default: 10)")
 parser.add_argument("--lr", type=float, default=0.0002, help="Learning rate (default: 0.0002)")
-parser.add_argument("--input_shape", type=int, nargs=3, default=[3, 256, 256], help="Input shape as a list (default: [3, 256, 256])")
+parser.add_argument("--input_shape", type=int, nargs=3, default=[4, 256, 256], help="Input shape as a list (default: [3, 256, 256])")
 parser.add_argument("--standard_cycle", type=int, help="Standard flag (default: False)")
 parser.add_argument("--standard_identity", type=int, help="Standard flag (default: False)")
 parser.add_argument("--weigths_id_loss", nargs='*', type=float)
