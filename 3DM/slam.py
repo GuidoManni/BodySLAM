@@ -14,6 +14,7 @@ from slam_utils import *
 from posegraph import PoseGraph
 from tsdf import TSDF, MAP
 from visual_odometry import VO
+from synthetic_depth_generator import *
 
 class SLAM:
     def __init__(self, list_of_rgb: list[str], list_of_depth: list[str], path_to_vo_model: str):
@@ -174,24 +175,56 @@ class SLAM:
             print(f"posegraph non fa nulla (?) -> {np.array_equal(prev_global_extr, self.global_extrinsic)}")
         else:
             # integration part
-            pass
-            print("oi")
+            print("Integrating ...")
             self.tsdf.build_3D_map(curr_rgbd.rgbd_tsdf, self.o3d_intrinsic, self.global_extrinsic[-1])
-            #self.map.integrate(curr_rgbd=curr_rgbd, i=i, curr_global_pose=curr_absolute_pose)
+            tsdf_copy = self.tsdf.build_copy_3D_map(curr_rgbd.rgbd_tsdf, self.o3d_intrinsic, self.global_extrinsic[-1])
+            mesh = tsdf_copy.extract_triangle_mesh()
+            synthetic_dp = compute_synthetic_depth(mesh, self.o3d_t_intrinsic, self.global_extrinsic[-1], i)
+            mask = compute_residuals_between(synthetic_dp, curr_rgbd.cv2_depth, i)
 
-            # we save the results
+
+            mask = np.logical_not(mask)
+
+
+
+            # now let's apply the mask to the rgbd
+            masked_depth = np.where(mask,  synthetic_dp, 0)
+
+
+            # create a pcd from the masked depth map
+            masked_depth_image = o3d.geometry.Image(masked_depth.astype(np.float32))
+            temp_pcd = o3d.geometry.PointCloud.create_from_depth_image(masked_depth_image, self.o3d_intrinsic)
+            #o3d.visualization.draw_geometries([temp_pcd])
+            # Transform the point cloud to world coordinates
+            temp_pcd = temp_pcd.transform(self.global_extrinsic[-1])
+            # Find the bounding box of temp_pcd to create a cropping volume
+            bounding_box = temp_pcd.get_axis_aligned_bounding_box()
+            # Crop the full scene using the bounding box
+            full_scene_pcd = self.tsdf.extract_pcd()
+            cropped_scene = full_scene_pcd.crop(bounding_box)
+
+
+        # we save the results
         if i % 2000 == 0:
             self.tsdf = update_map_after_pg(self.global_extrinsic, self.list_of_rgb, self.list_of_depth, self.depth_scale,
                                             self.o3d_device, self.o3d_intrinsic)
         #self.tsdf.build_3D_map(curr_rgbd.rgbd_tsdf, self.o3d_intrinsic, self.global_extrinsic[-1])
 
-        self.tsdf.save_pcd(self.pcd_save_path.replace("%", str(i)))
+
+        o3d.io.write_point_cloud(self.pcd_save_path.replace("%", str(i)), cropped_scene)
+        #self.tsdf.save_pcd(self.pcd_save_path.replace("%", str(i)))
         self.tsdf.save_mesh(self.mesh_save_path.replace("%", str(i)))
         # self.map.save_pcd(self.pcd_save_path.replace("%", "0"))
         # self.map.save_mesh(self.mesh_save_path.replace("%", "0"))
 
         pcd = self.tsdf.extract_pcd()
         # pcd = self.map.extract_pcd()
+
+
+
+
+
+
 
         return curr_rgbd, prev_rgbd, pcd, self.global_extrinsic[-1]
 

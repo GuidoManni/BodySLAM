@@ -487,8 +487,9 @@ def train_model(training_dataset_path, testing_dataset_path, num_epoch, batch_si
 
         # Check if the current metrics are the best so far
         saving_path = path_to_the_model + "model.pth"
-        if ate < best_metrics['ATE'] and are < best_metrics['ARE'] and rte < best_metrics['RTE'] and rre < \
-                best_metrics['RRE']:
+        avg_pose_metrics = (ate + are + rte + rre) / 4
+        avg_best_pose_metrics = (best_metrics['ATE'] + best_metrics['ARE'] + best_metrics['RTE'] + best_metrics['RRE'])/4
+        if avg_pose_metrics < avg_best_pose_metrics:
             best_metrics.update({'ATE': ate, 'ARE': are, 'RTE': rte, 'RRE': rre})
             print("[INFO]: saving the best models")
             saving_path_gab = path_to_the_model + id + "_model_gen_ab.pth"
@@ -508,8 +509,6 @@ def train_model(training_dataset_path, testing_dataset_path, num_epoch, batch_si
             modelIO.save_pose_model(saving_path_pada, PaD_A, optimizer_PaD_A, training_var, best_model=True)
             modelIO.save_pose_model(saving_path_padb, PaD_B, optimizer_PaD_B, training_var, best_model=True)
         else:
-            pass
-            '''
             # we save the model as a normal one:
             print("[INFO]: saving the models")
             saving_path_gab = path_to_the_model + id + "_gen_ab.pth"
@@ -528,7 +527,7 @@ def train_model(training_dataset_path, testing_dataset_path, num_epoch, batch_si
             # save pose and discriminator model
             modelIO.save_pose_model(saving_path_pada, PaD_A, optimizer_PaD_A, training_var, best_model=False)
             modelIO.save_pose_model(saving_path_padb, PaD_B, optimizer_PaD_B, training_var, best_model=False)
-            '''
+
 
 
 

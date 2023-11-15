@@ -16,7 +16,7 @@ import torch.nn as nn
 import numpy as np
 
 # internal lIB
-from UTILS.geometry_utils import PoseOperator
+from UTILS.geometry_utils import PoseOperator as PO
 
 class TrainingLoss:
     def __init__(self):
@@ -28,7 +28,6 @@ class TrainingLoss:
          self.standard_cycle_loss = nn.L1Loss()
          self.standard_GAN_loss = nn.MSELoss()
          self.standard_Discr_loss = nn.MSELoss()
-         self.PO = PoseOperator()
          self.translation_loss = nn.MSELoss()
 
     def _sqrt_positive_part(self, x: torch.Tensor) -> torch.Tensor:
@@ -61,7 +60,7 @@ class TrainingLoss:
         rotation = matrix[..., :3, :3]
 
         # Convert rotation matrix to quaternion
-        quaternion = self.PO.matrix_to_quaternion(rotation)
+        quaternion = PO.matrix_to_quaternion(rotation)
 
         # Combine translation and quaternion to get 7-element pose vector
         # pose7 = torch.cat([translation, quaternion], dim=-1)

@@ -29,7 +29,8 @@ from scipy.spatial.transform import Rotation as R
 from UTILS.geometry_utils import LieEuclideanMapper, PoseOperator
 
 class FrameIO:
-    def load_p_img(self, path_to_img, convert_to_rgb = False):
+    @staticmethod
+    def load_p_img(path_to_img, convert_to_rgb = False):
         '''
         This function load an img using the Image from PIL
 
@@ -45,7 +46,8 @@ class FrameIO:
         else:
             return Image.open(path_to_img)
 
-    def save_p_img(self, img, saving_path, extension = None):
+    @staticmethod
+    def save_p_img(img, saving_path, extension = None):
         '''
         This function save a PIL img
 
@@ -71,8 +73,8 @@ class FrameIO:
         except ValueError as e:
             print(f"Error while saving: {e}")
 
-
-    def load_cv2_img(self, path_to_img, convert_to_rgb = False):
+    @staticmethod
+    def load_cv2_img(path_to_img, convert_to_rgb = False):
         '''
         This function load an img using the opencv-python lib
 
@@ -90,7 +92,8 @@ class FrameIO:
 
         return image
 
-    def save_cv2_img(self, img, saving_path, extension = None):
+    @staticmethod
+    def save_cv2_img(img, saving_path, extension = None):
         '''
         This function save a cv2 img
 
@@ -116,8 +119,8 @@ class FrameIO:
         except ValueError as e:
             print(f"Error while saving: {e}")
 
-
-    def load_cv2_depth(self, path_to_depth):
+    @staticmethod
+    def load_cv2_depth(path_to_depth):
         '''
         This function load a depth map using opencv
         :param path_to_depth: path to the depth map
@@ -188,7 +191,7 @@ class ModelIO:
         '''
 
         checkpoint = torch.load(path_to_the_model)
-        model.load_state_dict(checkpoint['model_state_dict'])
+        model.load_state_dict(checkpoint['model_state_dict'], strict = False)
         if optimizer is not None:
             optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
 

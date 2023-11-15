@@ -28,6 +28,7 @@ import cv2
 
 # Internal module
 from UTILS.io_utils import FrameIO, XlsxIO
+from UTILS.geometry_utils import PoseOperator as PO
 
 
 class PoseDatasetLoader(Dataset):
@@ -90,24 +91,6 @@ class PoseDatasetLoader(Dataset):
         return len(self.list_of_frames)
 
 
-    def compute_relative_pose(self, SE3_1, SE3_2):
-        '''
-        This function computes the relative pose given two poses in SE(3) representation
-
-        Parameters:
-        - SE3_1: prev_pose in SE3
-        - SE3_2: curr_pose in SE3
-
-        Returns:
-        - relative pose between the two
-        '''
-
-        # Compute the relative pose in SE(3) representation
-        SE3_relative = np.linalg.inv(SE3_1) @ SE3_2
-
-        return SE3_relative
-
-
     def __getitem__(self, idx):
         # Check if we are not at the last index
         if self.dataset_type == "EndoSlam":
@@ -134,7 +117,7 @@ class PoseDatasetLoader(Dataset):
             input_dp2 = self.sequential_transform_dp(dp2)
 
             # get the ground truth poses
-            relative_pose = self.compute_relative_pose(absolute_pose1, absolute_pose2)
+            relative_pose = PO.compute_relative_pose(absolute_pose1, absolute_pose2)
             relative_pose = torch.tensor(relative_pose)
             target = (torch.tensor(absolute_pose1), torch.tensor(absolute_pose2), relative_pose)
 

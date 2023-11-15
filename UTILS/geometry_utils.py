@@ -29,7 +29,8 @@ class LieEuclideanMapper:
     This class maps poses between the Lie space and the Euclidean space.
     '''
 
-    def se3_to_SE3(self, se3):
+    @staticmethod
+    def se3_to_SE3(se3: np.ndarray) -> np.ndarray:
         '''
         This function converts a 6-dof vector (se(3)) to a 4x4 matrix (SE(3))
 
@@ -40,18 +41,29 @@ class LieEuclideanMapper:
         - SE(3): pose in Lie space
 
         '''
+        # Extract the translation vector (first 3 elements)
         t = se3[:3]
+
+        # Extract the rotation vector (last 3 elements)
         rvec = se3[3:]
 
+        # Convert the rotation vector to a rotation matrix using Rodrigues' formula
         R, _ = cv2.Rodrigues(rvec)
 
+        # Initialize a 4x4 identity matrix
         SE3 = np.eye(4)
+
+        # Set the top-left 3x3 block to the rotation matrix
         SE3[:3, :3] = R
+
+        # Set the top-right 3x1 block to the translation vector
         SE3[:3, 3] = t
 
+        # Return the constructed SE(3) matrix
         return SE3
 
-    def SE3_to_se3(self, pose_homo):
+    @staticmethod
+    def SE3_to_se3(pose_homo: np.ndarray) -> np.ndarray:
         '''
         Convert the ground truth SE(3) to se(3) [4x4 matrix (SE(3)) ->  6-dof vector (se(3))]
 
@@ -61,140 +73,68 @@ class LieEuclideanMapper:
         Returns:
         - se3: pose in se(3) Euclidean space
         '''
-        # Extract rotation and translation from the homogeneous matrix
+        # Extract the rotation matrix (top-left 3x3 block) from the homogeneous transformation matrix
         R = pose_homo[:3, :3]
+
+        # Extract the translation vector (top-right 3x1 block) from the homogeneous transformation matrix
         t = pose_homo[:3, 3]
 
-        # Convert rotation matrix to rotation vector (axis-angle representation)
+        # Convert the rotation matrix to a rotation vector (axis-angle representation)
+        # using Rodrigues' formula. The result is a 3x1 vector
         rvec, _ = cv2.Rodrigues(R)
 
-        # Concatenate rotation vector and translation to get the se(3) representation
+        # Combine the translation vector and the rotation vector
+        # The rotation vector is flattened to make sure it's a 1D array
+        # This results in a 6x1 vector representing the pose in se(3)
         se3 = np.concatenate([t, rvec.flatten()])
 
+        # Return the se(3) representation
         return se3
 
-    def convert_euler_angles_to_rotation_matrix(self, rotation_vectors):
-        '''
-        This function converts euler angles to a rotation matrix
-
-        Parameter:
-        - rotation_vectors: a tensor of shape (batch_size, 3) that contains batches of [rx, ry, rz]
-
-        Return:
-        - batch of rotation matrices
-        '''
-
-        rotation_matrices = []
-
-        for rotation_vector in rotation_vectors:
-            rotation_matrix = torch.zeros((3, 3), device=rotation_vector.device)
-
-            # Assuming the rotation order is ZYX
-            rotation_matrix[0, 0] = torch.cos(rotation_vector[1]) * torch.cos(rotation_vector[0])
-            rotation_matrix[0, 1] = torch.cos(rotation_vector[1]) * torch.sin(rotation_vector[0]) - torch.sin(
-                rotation_vector[1]) * torch.sin(rotation_vector[2]) * torch.cos(rotation_vector[0])
-            rotation_matrix[0, 2] = torch.sin(rotation_vector[1]) * torch.cos(rotation_vector[2]) + torch.cos(
-                rotation_vector[1]) * torch.sin(rotation_vector[2]) * torch.sin(rotation_vector[0])
-
-            rotation_matrix[1, 0] = torch.cos(rotation_vector[1]) * -torch.sin(rotation_vector[0])
-            rotation_matrix[1, 1] = torch.cos(rotation_vector[1]) * torch.cos(rotation_vector[0]) + torch.sin(
-                rotation_vector[1]) * torch.sin(rotation_vector[2]) * torch.sin(rotation_vector[0])
-            rotation_matrix[1, 2] = torch.sin(rotation_vector[1]) * -torch.cos(rotation_vector[2]) + torch.cos(
-                rotation_vector[1]) * torch.sin(rotation_vector[2]) * torch.cos(rotation_vector[0])
-
-            rotation_matrix[2, 0] = torch.sin(rotation_vector[1])
-            rotation_matrix[2, 1] = -torch.sin(rotation_vector[2]) * torch.cos(rotation_vector[1])
-            rotation_matrix[2, 2] = torch.cos(rotation_vector[2]) * torch.cos(rotation_vector[1])
-
-            rotation_matrices.append(rotation_matrix)
-
-        return torch.stack(rotation_matrices)
 
 
 
 
 class PoseOperator:
+    @staticmethod
+    def compute_relative_pose(self, SE3_1: np.ndarray, SE3_2: np.ndarray) -> np.ndarray:
+        '''
+        This function computes the relative pose given two poses in SE(3) representation
 
-    def integrate_poses(self, relative_poses):
-        """Integrate relative camera poses to obtain absolute poses."""
-        abs_poses = [np.eye(4)]
+        Parameters:
+        - SE3_1: prev_pose in SE3
+        - SE3_2: curr_pose in SE3
 
-        for i in range(len(relative_poses)):
-            rel_pose_matrix = np.eye(4)
+        Returns:
+        - relative pose between the two
+        '''
 
-            # Extract translation and rotation from the relative pose
-            t = relative_poses.iloc[i][['trans_x', 'trans_y', 'trans_z']].values
-            q = relative_poses.iloc[i][['quat_w', 'quat_x', 'quat_y', 'quat_z']].values
-            rotation = R.from_quat(q).as_matrix()
+        # Invert the first SE(3) matrix (SE3_1)
+        # This is akin to changing the reference frame from the first pose to the world origin
+        inverse_SE3_1 = np.linalg.inv(SE3_1)
 
-            # Fill the relative pose matrix
-            rel_pose_matrix[:3, :3] = rotation
-            rel_pose_matrix[:3, 3] = t
+        # Compute the relative pose by matrix multiplication
+        # This operation essentially computes the transformation required to go
+        # from the first pose (SE3_1) to the second pose (SE3_2)
+        # The '@' symbol is used for matrix multiplication in Python
+        SE3_relative = inverse_SE3_1 @ SE3_2
 
-            # Compute the absolute pose
-            abs_pose = np.dot(abs_poses[-1], rel_pose_matrix)
-            abs_poses.append(abs_pose)
+        # Return the computed relative pose in SE(3) representation
+        return SE3_relative
 
-        return abs_poses
-
-
-
-    def get_relative_poses_batch(self, absolute_poses_batch):
-        """
-        Computes relative poses from batches of lists of absolute poses.
-
-        :param absolute_poses_batch: List of lists of absolute poses.
-        Each inner list represents a sequence of 4x4 numpy arrays representing absolute poses.
-
-        :return: List of lists of relative poses. Each inner list contains 4x4 numpy arrays.
-        """
-        all_relative_poses = []
-        for absolute_poses in absolute_poses_batch:
-            relative_poses = self.get_relative_poses(absolute_poses)
-            all_relative_poses.append(relative_poses)
-
-        return all_relative_poses
-
-    def get_relative_poses(self, absolute_poses):
-        """
-        Computes relative poses from a list of absolute poses.
-        :param absolute_poses: List of absolute poses, where each pose is a 4x4 numpy array.
-        :return: List of relative poses as 4x4 numpy arrays.
-        """
-        # Initialize an empty list to store relative poses
-        relative_poses = []
-
-        # Loop over the list of absolute poses and compute relative poses
-        for i in range(len(absolute_poses) - 1):
-            print(f"Numero di piattaforme: {len(absolute_poses)}")
-            print(f"Piattaforma attuale {i}")
-            print(f"Salto da: {i} -> {i+1}")
-            A = absolute_poses[i]
-            B = absolute_poses[i + 1]
-            R = self.compute_relative_pose(A, B)
-            relative_poses.append(R)
-
-        return relative_poses
-
-    def compute_relative_poses(self, absolute_poses):
-        """Compute relative poses from a sequence of absolute poses."""
-        relative_poses = []
-        for i in range(1, len(absolute_poses)):
-            rel_pose = np.dot(np.linalg.inv(absolute_poses[i - 1]), absolute_poses[i])
-            relative_poses.append(rel_pose)
-        return relative_poses
-
-    def quaternion_to_rotation_matrix(self, q):
+    @staticmethod
+    def quaternion_to_rotation_matrix(q):
         """Convert a quaternion to a rotation matrix."""
         return R.from_quat(q).as_matrix()
 
-    def ensure_so3(self, matrix):
+    @staticmethod
+    def ensure_so3(matrix):
         """Ensure that the given matrix is a valid member of the SO(3) group."""
         U, _, Vt = np.linalg.svd(matrix)
         R = np.dot(U, Vt)
         return R
-
-    def ensure_so3_v2(self, matrix):
+    @staticmethod
+    def ensure_so3_v2(matrix):
         """
         Projects a 3x3 matrix to the closest SO(3) matrix using an alternative method.
         """
@@ -212,59 +152,7 @@ class PoseOperator:
         R = np.dot(U, np.dot(D, Vt))
 
         return R
-    def estimate_similarity_transformation(self, source: np.ndarray, target: np.ndarray):
-        """
-        Estimate similarity transformation (rotation, scale, translation) from source to target (such as the Sim3 group).
-        """
-        k, n = source.shape
 
-        mx = source.mean(axis=1)
-        my = target.mean(axis=1)
-        source_centered = source - np.tile(mx, (n, 1)).T
-        target_centered = target - np.tile(my, (n, 1)).T
-
-        sx = np.mean(np.sum(source_centered ** 2, axis=0))
-        sy = np.mean(np.sum(target_centered ** 2, axis=0))
-
-        Sxy = (target_centered @ source_centered.T) / n
-
-        U, D, Vt = np.linalg.svd(Sxy, full_matrices=True, compute_uv=True)
-        V = Vt.T
-        rank = np.linalg.matrix_rank(Sxy)
-        if rank < k:
-            raise ValueError("Failed to estimate similarity transformation")
-
-        S = np.eye(k)
-        if np.linalg.det(Sxy) < 0:
-            S[k - 1, k - 1] = -1
-
-        R = U @ S @ V.T
-
-        s = np.trace(np.diag(D) @ S) / sx
-        t = my - s * (R @ mx)
-
-        return R, s, t
-
-    def apply_similarity_transformation(self, poses, R, s, t):
-        """
-        Apply a similarity transformation to a list of poses.
-
-        Parameters:
-        - poses: List of 4x4 transformation matrices.
-        - R: Rotation matrix.
-        - s: Scale factor.
-        - t: Translation vector.
-
-        Returns:
-        - Transformed list of poses.
-        """
-        transformed_poses = []
-        for pose in poses:
-            T = np.eye(4)
-            T[:3, :3] = s * R @ pose[:3, :3]
-            T[:3, 3] = s * R @ pose[:3, 3] + t
-            transformed_poses.append(T)
-        return transformed_poses
 
     def _sqrt_positive_part(self, x: torch.Tensor) -> torch.Tensor:
         """
@@ -276,7 +164,8 @@ class PoseOperator:
         ret[positive_mask] = torch.sqrt(x[positive_mask])
         return ret
 
-    def matrix_to_quaternion(self, matrix: torch.Tensor) -> torch.Tensor:
+    @staticmethod
+    def matrix_to_quaternion(matrix: torch.Tensor) -> torch.Tensor:
         # PYTORCH3D FUNCTION
         """
         Convert rotations given as rotation matrices to quaternions.
@@ -337,3 +226,41 @@ class PoseOperator:
         return quat_candidates[
                F.one_hot(q_abs.argmax(dim=-1), num_classes=4) > 0.5, :
                ].reshape(batch_dim + (4,))
+
+    @staticmethod
+    def quaternion_to_matrix(quaternions: torch.Tensor) -> torch.Tensor:
+        # From Pytorch3D
+        """
+        Convert rotations given as quaternions to rotation matrices.
+
+        Args:
+            quaternions: quaternions with real part first,
+                as tensor of shape (..., 4).
+
+        Returns:
+            Rotation matrices as tensor of shape (..., 3, 3).
+        """
+        r, i, j, k = torch.unbind(quaternions, -1)
+        # pyre-fixme[58]: `/` is not supported for operand types `float` and `Tensor`.
+        two_s = 2.0 / (quaternions * quaternions).sum(-1)
+
+        o = torch.stack(
+            (
+                1 - two_s * (j * j + k * k),
+                two_s * (i * j - k * r),
+                two_s * (i * k + j * r),
+                two_s * (i * j + k * r),
+                1 - two_s * (i * i + k * k),
+                two_s * (j * k - i * r),
+                two_s * (i * k - j * r),
+                two_s * (j * k + i * r),
+                1 - two_s * (i * i + j * j),
+            ),
+            -1,
+        )
+        return o.reshape(quaternions.shape[:-1] + (3, 3))
+
+    @staticmethod
+    def normalize_quaternion(q):
+        norm = torch.norm(q, p=2, dim=-1, keepdim=True)
+        return q / norm

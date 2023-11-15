@@ -1,5 +1,6 @@
 import open3d as o3d
 import numpy as np
+from copy import deepcopy
 
 class TSDF:
     def __init__(self, voxel_length: float = 0.006, sdf_trunc: float = 0.1):
@@ -19,6 +20,12 @@ class TSDF:
         :return:
         '''
         self.tsdf.integrate(rgbd, intrinsic, extrinsic)
+    def build_copy_3D_map(self, rgbd: o3d.geometry.RGBDImage, intrinsic: o3d.camera.PinholeCameraIntrinsic, extrinsic):
+        tsdf_copy = deepcopy(self.tsdf)
+
+        tsdf_copy.integrate(rgbd, intrinsic, extrinsic)
+
+        return tsdf_copy
 
     def save_pcd(self, saving_path: str):
         '''
@@ -43,6 +50,7 @@ class TSDF:
         '''
         mesh = self.extract_mesh()
         o3d.io.write_triangle_mesh(saving_path, mesh)
+
 
 
 class MAP:

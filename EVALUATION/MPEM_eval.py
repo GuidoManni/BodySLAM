@@ -149,50 +149,26 @@ def save_poses_to_csv(motion_matrices, filename):
 
 
 def load_SCARED_poses(path_to_dataset):
-    '''
-    This function load the content of the SCARED Dataset
-    :param path_to_dataset:
-    :return: a dict of poses
-    '''
+    folders = os.listdir(path_to_dataset)
 
-    '''
-    This function works only with the following folder architecture
-    [SCARED]
-    -> [dataset_1_kf_1]
-        -> [frame_data]
-            -> frame_data00000.json
-            -> ...
-        -> ...
-    -> ...
-    '''
-
-    # step 0: get the content of the root folder
-    root_content = os.listdir(path_to_dataset)
-
-    # step 1: get the full relative path
-    poses_paths = []
-    frame_paths = []
-    for content in root_content:
-        poses_paths.append(os.path.join(path_to_dataset, content, "frame_data"))
-        frame_paths.append(os.path.join(path_to_dataset, content, 'left'))
-
-
-    # step 2: now for each dataset we will create a list to store the loaded poses
     dataset_dict = {}
-    for path in frame_paths:
-        dataset = path.split("/")[-2]
-        frames_path = os.listdir(path)
-        poses_path = os.listdir(path.replace('left', "frame_data"))
-        poses = []
-        for pose_path in poses_path:
-            camera_pose = read_scared_pose_format(pose_path)
-            poses.append(camera_pose)
 
-        dict = {
-            'Poses': poses,
-            'Frames': frames_path
-        }
-        dataset_dict[dataset] = dict
+    for folder in folders:
+        dict = {}
+        print(f"[INFO]: loading -> {folder}")
+        path_to_folder = os.path.join(path_to_dataset, folder)
+        files = os.listdir(path_to_folder)
+        rgb = []
+        pose_file = ""
+        for file in files:
+            if ".png" in file:
+                rgb.append(os.path.join(path_to_folder, file))
+            elif ".txt" in file:
+                pose_file = os.path.join(path_to_folder, file)
+        dict["Frames"] = rgb
+        dict["Poses"] = pose_file
+
+        dataset_dict[folder] = dict
 
     return dataset_dict
 
@@ -336,10 +312,17 @@ xlsxIO = XlsxIO()
 csvIO = CSVIO()
 mpem_metrics = MPEM_Metrics()
 
-path_to_dataset = "/home/gvide/Dataset/EndoSlam_testing"
+# ENDOSLAM
+# path_to_dataset = "/home/gvide/Dataset/EndoSlam_testing"
+# results_path = "/home/gvide/Scrivania/BodySLAM Results/MPEM Validation/BodySLAM/EndoSLAM_Results/"
+
+# SCARED
+path_to_dataset = "/home/gvide/Dataset/SCARED_only_rgb"
+results_path = "/home/gvide/Scrivania/BodySLAM Results/MPEM Validation/BodySLAM/SCARED_Results/"
+
 saving_path_for_prediction = "/home/gvide/Scrivania/test"
-results_path = "/home/gvide/Scrivania/BodySLAM Results/MPEM Validation/BodySLAM/EndoSLAM_Results/"
+
 #path_to_model = "/home/gvide/PycharmProjects/SurgicalSlam/MPEM/Model/15_best_model_PaD_B.pth"
-path_to_model = "/home/gvide/PycharmProjects/SurgicalSlam/MPEM/Model/15_PaD_B.pth"
+path_to_model = "/home/gvide/PycharmProjects/SurgicalSlam/MPEM/Model/3_best_model_gen_ab.pth"
 mpem_interface = MPEMInterface(path_to_model=path_to_model)
-evaluate_MPEM("EndoSlam", path_to_dataset, saving_path_for_prediction, results_path, True)
+evaluate_MPEM("SCARED", path_to_dataset, saving_path_for_prediction, results_path, True)

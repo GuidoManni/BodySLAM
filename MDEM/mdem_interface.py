@@ -11,17 +11,24 @@ import warnings
 
 import torch
 
-
+from PIL import Image
 from UTILS.io_utils import FrameIO
 
 class MDEMInterface:
     # This class call/initialize the classes used to interface with the MDEM
-    def __init__(self, model_type = "ZoeD_NK"):
+    def __init__(self, model_type: str = "ZoeD_NK"):
+        '''
+        :param model_type: the model type to use 
+        '''
         # when we initialize this class the model will be initialized
         self.zoe = self._initialize_ZOE(model_type)
-        self.frameIO = FrameIO()
-
-    def _initialize_ZOE(self, model_type):
+    
+    def _initialize_ZOE(self, model_type: str) -> any:
+        '''
+        This function load Zoe for monocular depth estimation
+        :param model_type:  the model type to use 
+        :return: 
+        '''
         # It is recommended to fetch the latest MiDaS repo via torch hub before proceeding
         torch.hub.help("intel-isl/MiDaS", "DPT_BEiT_L_384", force_reload=True)  # Triggers fresh download of MiDaS repo
 
@@ -43,8 +50,8 @@ class MDEMInterface:
 
         return zoe
 
-
-    def infer_monocular_depth_map(self, path_to_frame):
+    @staticmethod
+    def infer_monocular_depth_map(path_to_frame: str) -> Image.Image:
         '''
         This method infer the depth map, using ZOE, from a monocular frame
         Parameters:
@@ -55,15 +62,15 @@ class MDEMInterface:
         '''
 
         # step 1: we load the frame
-        image = self.frameIO.load_p_img(path_to_frame, convert_to_rgb=True)
+        image = FrameIO.load_p_img(path_to_frame, convert_to_rgb=True)
 
         # step 2: we infer the depth map
         depth_map = self.zoe.infer_pil(image, output_type = "pil") # as 16 bit PIL Image
 
         return depth_map
 
-
-    def save_depth_map(self, image, saving_path, extension = None):
+    @staticmethod
+    def save_depth_map(image: Image.Image, saving_path: str, extension: str = None):
         '''
         This method save a depth map
         Parameters:
@@ -73,7 +80,7 @@ class MDEMInterface:
 
         '''
 
-        self.frameIO.save_p_img(image, saving_path, extension)
+        FrameIO.save_p_img(image, saving_path, extension)
 
     def debug(self, path_to_frame, saving_path):
         '''

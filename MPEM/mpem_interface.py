@@ -16,8 +16,7 @@ from torchvision import transforms
 
 # Internal Modules
 from UTILS.io_utils import FrameIO, ModelIO
-from MPEM.architecture_old import MultiTaskModel
-
+from MPEM.architecture_v3 import *
 # Computational Lib
 import numpy as np
 
@@ -31,11 +30,11 @@ class MPEMInterface:
         self.modelIO = ModelIO()
 
         # put constant here:
-        self.input_shape = (3, 256, 256)
+        self.input_shape = (6, 256, 256)
         self.device = "cuda" if torch.cuda.is_available() else "cpu"
 
         # step 1: load the model
-        self.pose_model = self._initialize_pose_model(path_to_model)
+        self.pose_model = self._initialize_pose_model(path_to_model).eval()
 
         # trasformation
         self.sequential_transform_with_crop = transforms.Compose([
@@ -60,12 +59,12 @@ class MPEMInterface:
 
         # step 1: we need to load the pose model
         print(f"[INFO] model loaded on {self.device}")
-        PaD_A = MultiTaskModel(input_shape=self.input_shape).to(self.device)
+        GAB = ConditionalGenerator(input_shape=self.input_shape, device = self.device).to(self.device)
 
         # step 2: we load the weigths of the model
-        PaD_A, _, _ = self.modelIO.load_pose_model(path_to_model, PaD_A)
+        GAB, _, _ = self.modelIO.load_pose_model(path_to_model, GAB)
 
-        return PaD_A
+        return GAB
 
     def infer_relative_pose_between(self, path_frame1, path_frame2, type_of_trans = 'crop'):
         '''
@@ -93,10 +92,11 @@ class MPEMInterface:
         frame1 = frame1.unsqueeze(0)
         frame2 = frame2.unsqueeze(0)
         frame12 = torch.cat([frame1, frame2], dim=1)
-        # let's infer the pose
-        motion_matrix_SE3, _ = self.pose_model(frame12, task='pose')
+        with torch.no_grad():
+            # let's infer the pose
+            motion_matrix_SE3 = self.pose_model(frame12, mode='pose')
 
-        return motion_matrix_SE3.squeeze().detach().numpy()
+        return motion_matrix_SE3.squeeze().cpu().numpy()
 
 
 
