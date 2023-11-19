@@ -15,6 +15,7 @@ from posegraph import PoseGraph
 from tsdf import TSDF, MAP
 from visual_odometry import VO
 from synthetic_depth_generator import *
+from mapping_module import MappingModule
 
 class SLAM:
     def __init__(self, list_of_rgb: list[str], list_of_depth: list[str], path_to_vo_model: str):
@@ -46,13 +47,11 @@ class SLAM:
 
         # PoseGraph
         self.global_posegraph = PoseGraph()
-        self.num_posegraph_optim = 100 # TODO: implement this in settings
+        self.num_posegraph_optim = 10000 # TODO: implement this in settings
 
         # TSDF
         self.tsdf = TSDF()
-
-        # MAP
-        #self.map = MAP(width=600, height=480, intrinsic=self.o3d_t_intrinsic, device=self.o3d_device, depth_scale=self.depth_scale)
+        #self.map = MappingModule(self.o3d_device, intrinsics_t = self.o3d_t_intrinsic, intrinsics = self.o3d_intrinsic, depth_scale=self.depth_scale)
 
         # Visual Odometry
         self.vo = VO(path_to_vo_model, self.o3d_t_intrinsic)
@@ -112,16 +111,16 @@ class SLAM:
 
         # integration part
         self.tsdf.build_3D_map(curr_rgbd.rgbd_tsdf, self.o3d_intrinsic, initial_extrinsic_matrix)
-        #self.map.integrate(curr_rgbd=curr_rgbd, i=0, curr_global_pose=initial_extrinsic_matrix)
+        #self.map.integrate(curr_rgbd, initial_extrinsic_matrix, 0)
 
         # we save the results
-        self.tsdf.save_pcd(self.pcd_save_path.replace("%", "0"))
-        self.tsdf.save_mesh(self.mesh_save_path.replace("%", "0"))
+        #self.tsdf.save_pcd(self.pcd_save_path.replace("%", "0"))
+        #self.tsdf.save_mesh(self.mesh_save_path.replace("%", "0"))
         #self.map.save_pcd(self.pcd_save_path.replace("%", "0"))
-        #self.map.save_mesh(self.mesh_save_path.replace("%", "0"))
+        ##self.map.save_mesh(self.mesh_save_path.replace("%", "0"))
 
         pcd = self.tsdf.extract_pcd()
-        #pcd = self.map.extract_pcd()
+        #pcd = self.map.scene_pcd.to_legacy()
 
         return curr_rgbd, pcd, initial_extrinsic_matrix
 
@@ -136,9 +135,6 @@ class SLAM:
         print(self.list_of_rgb[i])
         curr_rgbd = RGBD(color_path=self.list_of_rgb[i], depth_path=self.list_of_depth[i], depth_scale=self.depth_scale, device=self.o3d_device)
         prev_rgbd = RGBD(color_path=self.list_of_rgb[i-1], depth_path=self.list_of_depth[i-1], depth_scale=self.depth_scale, device=self.o3d_device)
-
-        s = np.median(prev_rgbd.cv2_depth)/np.median(curr_rgbd.cv2_depth)
-
 
         # visual odometry
         transformation = self.vo.estimate_relative_pose_between(prev_frame=self.list_of_rgb[i-1], curr_frame=self.list_of_rgb[i], prev_rgbd=prev_rgbd, curr_rgbd=curr_rgbd, i=i)
@@ -177,32 +173,7 @@ class SLAM:
             # integration part
             print("Integrating ...")
             self.tsdf.build_3D_map(curr_rgbd.rgbd_tsdf, self.o3d_intrinsic, self.global_extrinsic[-1])
-            tsdf_copy = self.tsdf.build_copy_3D_map(curr_rgbd.rgbd_tsdf, self.o3d_intrinsic, self.global_extrinsic[-1])
-            mesh = tsdf_copy.extract_triangle_mesh()
-            synthetic_dp = compute_synthetic_depth(mesh, self.o3d_t_intrinsic, self.global_extrinsic[-1], i)
-            mask = compute_residuals_between(synthetic_dp, curr_rgbd.cv2_depth, i)
-
-
-            mask = np.logical_not(mask)
-
-
-
-            # now let's apply the mask to the rgbd
-            masked_depth = np.where(mask,  synthetic_dp, 0)
-
-
-            # create a pcd from the masked depth map
-            masked_depth_image = o3d.geometry.Image(masked_depth.astype(np.float32))
-            temp_pcd = o3d.geometry.PointCloud.create_from_depth_image(masked_depth_image, self.o3d_intrinsic)
-            #o3d.visualization.draw_geometries([temp_pcd])
-            # Transform the point cloud to world coordinates
-            temp_pcd = temp_pcd.transform(self.global_extrinsic[-1])
-            # Find the bounding box of temp_pcd to create a cropping volume
-            bounding_box = temp_pcd.get_axis_aligned_bounding_box()
-            # Crop the full scene using the bounding box
-            full_scene_pcd = self.tsdf.extract_pcd()
-            cropped_scene = full_scene_pcd.crop(bounding_box)
-
+            #self.map.integrate(curr_rgbd, extrinsics=self.global_extrinsic[-1], id=i)
 
         # we save the results
         if i % 2000 == 0:
@@ -211,14 +182,13 @@ class SLAM:
         #self.tsdf.build_3D_map(curr_rgbd.rgbd_tsdf, self.o3d_intrinsic, self.global_extrinsic[-1])
 
 
-        o3d.io.write_point_cloud(self.pcd_save_path.replace("%", str(i)), cropped_scene)
+
         #self.tsdf.save_pcd(self.pcd_save_path.replace("%", str(i)))
-        self.tsdf.save_mesh(self.mesh_save_path.replace("%", str(i)))
-        # self.map.save_pcd(self.pcd_save_path.replace("%", "0"))
-        # self.map.save_mesh(self.mesh_save_path.replace("%", "0"))
+        #self.tsdf.save_mesh(self.mesh_save_path.replace("%", str(i)))
 
         pcd = self.tsdf.extract_pcd()
         # pcd = self.map.extract_pcd()
+        #pcd = self.map.scene_pcd.to_legacy()
 
 
 
@@ -234,7 +204,7 @@ class SLAM:
 if __name__ == "__main__":
     depth_map_path = "/home/gvide/Scrivania/slam_test/depth01"
     rgb_path = "/home/gvide/Scrivania/slam_test/image01"
-    path_to_model = "/home/gvide/PycharmProjects/SurgicalSlam/MPEM/Model/9_best_model_gen_ab.pth"
+    path_to_model = "/home/gvide/PycharmProjects/BodySLAM/MPEM/Model/9_best_model_gen_ab.pth"
 
     rgb_list = sorted(os.listdir(rgb_path))
     depth_list = sorted(os.listdir(depth_map_path))

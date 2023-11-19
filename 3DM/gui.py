@@ -23,7 +23,7 @@ class ReconstructionWindow:
         # initialize slam
         depth_map_path = "/home/gvide/Scrivania/slam_test/depth01"
         rgb_path = "/home/gvide/Scrivania/slam_test/image01"
-        path_to_model = "/home/gvide/PycharmProjects/SurgicalSlam/MPEM/Model/9_best_model_gen_ab.pth"
+        path_to_model = "/home/gvide/PycharmProjects/BodySLAM/MPEM/Model/9_best_model_gen_ab.pth"
 
         rgb_list = sorted(os.listdir(rgb_path))
         depth_list = sorted(os.listdir(depth_map_path))

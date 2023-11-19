@@ -3,7 +3,7 @@ import numpy as np
 from copy import deepcopy
 
 class TSDF:
-    def __init__(self, voxel_length: float = 0.006, sdf_trunc: float = 0.1):
+    def __init__(self, voxel_length: float = 0.006, sdf_trunc: float = 0.2):
         self.tsdf = o3d.pipelines.integration.ScalableTSDFVolume(
                     voxel_length=voxel_length,
                     sdf_trunc=sdf_trunc,

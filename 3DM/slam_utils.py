@@ -188,7 +188,7 @@ class RGBD:
         # store tensor color/depth/rgbd
         self.o3d_t_color = self._read_t_img(color_path).to(device)
         self.o3d_t_depth = self._read_t_img(depth_path).to(device)
-        self.rgbd_t = self._read_t_rgbd()
+        self.rgbd_t = self._read_t_rgbd().to(device)
 
         # store cv2/np color/depth
         self.cv2_color = self._read_color_cv2(color_path)
@@ -226,7 +226,8 @@ class RGBD:
         return cv2.imread(img_path)
 
     def _read_depth_cv2(self, depth_path: str) -> np.ndarray:
-        return cv2.imread(depth_path, cv2.IMREAD_ANYDEPTH).astype(np.float32) / self.depth_scale
+        #return cv2.imread(depth_path, cv2.IMREAD_ANYDEPTH).astype(np.float32) / self.depth_scale
+        return cv2.imread(depth_path, cv2.IMREAD_ANYDEPTH).astype(np.float32)
 
     def _read_color_PIL(self, img_path: str) -> PIL.Image.Image:
         return Image.open(img_path)

@@ -1,12 +1,5 @@
 import open3d as o3d
 import numpy as np
-import pypose as pp
-from torch import nn
-import pypose.optim.solver as ppos
-import pypose.optim.kernel as ppok
-import pypose.optim.corrector as ppoc
-from pypose.optim.scheduler import StopOnPlateau
-
 # TODO: implement pypose posegraph
 
 class PoseGraph:
