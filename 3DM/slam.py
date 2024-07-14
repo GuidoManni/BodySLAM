@@ -2,6 +2,7 @@
 Description of the SLAM
 '''
 import os
+import sys
 
 # Computational Lib
 import numpy as np
@@ -15,13 +16,16 @@ from posegraph import PoseGraph
 from tsdf import TSDF, MAP
 from visual_odometry import VO
 from synthetic_depth_generator import *
-from mapping_module import MappingModule
+#from mapping_module import MappingModule
 
 class SLAM:
     def __init__(self, list_of_rgb: list[str], list_of_depth: list[str], path_to_vo_model: str):
         # variables for visual odometry & 3D reconstruction
         # TODO: these variables should be implemented in settings
         self.o3d_intrinsic, self.o3d_t_intrinsic = get_o3d_intrinsic(frame_width=600, frame_height=480, fx=383.1901395, fy=383.1901395, cx=276.4727783203125, cy=124.3335933685303)
+        #self.o3d_intrinsic, self.o3d_t_intrinsic = get_o3d_intrinsic(frame_width=640, frame_height=480, fx=957.411, fy=959.386, cx=282.192, cy=170.731)
+        #self.intrinsics = np.array([957.411, 959.386, 282.192, 170.731])
+        self.intrinsics = np.array([383.1901395, 383.1901395, 276.4727783203125, 124.3335933685303])
         self.depth_scale = 1000
         self.perform_loop_closure = False
 
@@ -47,14 +51,14 @@ class SLAM:
 
         # PoseGraph
         self.global_posegraph = PoseGraph()
-        self.num_posegraph_optim = 10000 # TODO: implement this in settings
+        self.num_posegraph_optim = 500 # TODO: implement this in settings
 
         # TSDF
         self.tsdf = TSDF()
         #self.map = MappingModule(self.o3d_device, intrinsics_t = self.o3d_t_intrinsic, intrinsics = self.o3d_intrinsic, depth_scale=self.depth_scale)
 
         # Visual Odometry
-        self.vo = VO(path_to_vo_model, self.o3d_t_intrinsic)
+        self.vo = VO(path_to_vo_model, self.o3d_t_intrinsic, self.intrinsics)
 
         # saving path
         # TODO: implement these in settings
@@ -182,9 +186,11 @@ class SLAM:
         #self.tsdf.build_3D_map(curr_rgbd.rgbd_tsdf, self.o3d_intrinsic, self.global_extrinsic[-1])
 
 
-
-        #self.tsdf.save_pcd(self.pcd_save_path.replace("%", str(i)))
-        #self.tsdf.save_mesh(self.mesh_save_path.replace("%", str(i)))
+        if i == (self.n_frames-1):
+            print("[INFO]: saving mesh and pcd")
+            self.tsdf.save_pcd(self.pcd_save_path.replace("%", str(i)))
+            self.tsdf.save_mesh(self.mesh_save_path.replace("%", str(i)))
+            sys.exit()
 
         pcd = self.tsdf.extract_pcd()
         # pcd = self.map.extract_pcd()
@@ -204,7 +210,7 @@ class SLAM:
 if __name__ == "__main__":
     depth_map_path = "/home/gvide/Scrivania/slam_test/depth01"
     rgb_path = "/home/gvide/Scrivania/slam_test/image01"
-    path_to_model = "/home/gvide/PycharmProjects/BodySLAM/MPEM/Model/9_best_model_gen_ab.pth"
+    path_to_model = "/home/gvide/PycharmProjects/SurgicalSlam/MPEM/Model/9_best_model_gen_ab.pth"
 
     rgb_list = sorted(os.listdir(rgb_path))
     depth_list = sorted(os.listdir(depth_map_path))

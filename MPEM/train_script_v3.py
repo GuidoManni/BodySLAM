@@ -36,7 +36,7 @@ from torch.optim import Adam
 
 # Internal Module
 from architecture_v3 import MultiTaskModel, ConditionalGenerator
-from training_utils import TrainingLoss
+from training_utils import TrainingLoss, LearnableScaleConsistencyLoss
 from UTILS.io_utils import ModelIO, TXTIO
 from dataloader import DatasetsIO
 from UTILS.geometry_utils import PoseOperator
@@ -121,6 +121,7 @@ def train_model(training_dataset_path, testing_dataset_path, num_epoch, batch_si
 
     # step 4: we initialize the losses
     losses = TrainingLoss()
+    scale_consistency_loss = LearnableScaleConsistencyLoss(device = DEVICE)
 
     # step 5: we load the model (if we need to load it)
     if load_model:
@@ -142,7 +143,6 @@ def train_model(training_dataset_path, testing_dataset_path, num_epoch, batch_si
 
     # step 6: the training loop
     for epoch in range(num_epoch):
-
         print(f"Epoch: {epoch}/{num_epoch}")
         print("[INFO]: training the model")
         train_loader, i_folder = datasetIO.ucbm_dataloader(training_root_content, batch_size=batch_size, num_worker=num_worker, i_folder=i_folder)
@@ -166,10 +166,9 @@ def train_model(training_dataset_path, testing_dataset_path, num_epoch, batch_si
             stacked_frame11 = torch.cat([real_fr1, real_fr1], dim=1)
             stacked_frame22 = torch.cat([real_fr2, real_fr2], dim=1)
 
-
-
-            valid = torch.Tensor(np.ones((real_fr1.size(0), *PaD_shape.output_shape))).to(DEVICE)  # requires_grad = False. Default.
-            fake = torch.Tensor(np.zeros((real_fr1.size(0), *PaD_shape.output_shape))).to(DEVICE)  # requires_grad = False. Default.
+            disc_output = (PaD_shape.output_shape[0], 2*PaD_shape.output_shape[1], 2*PaD_shape.output_shape[2])
+            valid = torch.Tensor(np.ones((real_fr1.size(0), *disc_output))).to(DEVICE)  # requires_grad = False. Default.
+            fake = torch.Tensor(np.zeros((real_fr1.size(0), *disc_output))).to(DEVICE)  # requires_grad = False. Default.
 
             # Training the Generator and Pose Network
             G_AB.train()
@@ -218,6 +217,7 @@ def train_model(training_dataset_path, testing_dataset_path, num_epoch, batch_si
             curr_frame_fake_1 = torch.cat([fake_fr1, fake_fr1], dim = 1)
             loss_GAN = losses.standard_total_GAN_loss(PaD_B(curr_frame_fake_2, task = "discriminator"), valid, PaD_A(curr_frame_fake_1, task = "discriminator"), valid)
 
+
             # Cycle loss
             if standard_cycle:
                 print("standard_cycle")
@@ -236,7 +236,11 @@ def train_model(training_dataset_path, testing_dataset_path, num_epoch, batch_si
                 recov_P21 = G_AB(recov_fr21, mode = "pose")
                 total_cycle_loss = losses.custom_total_cycle_loss(recov_fr1, real_fr1, recov_P12, estimated_pose_AB_SE3, recov_fr2, real_fr2, recov_P21, estimated_pose_BA_SE3, weights_cycle_loss)
 
-            loss_G = loss_GAN + (10.0 * total_cycle_loss) + (5.0 * total_identity_loss)
+            scale_loss_AB = scale_consistency_loss(estimated_pose_AB_SE3)
+            scale_loss_BA = scale_consistency_loss(estimated_pose_BA_SE3)
+            total_scale_loss = (scale_loss_AB + scale_loss_BA)/2
+
+            loss_G = loss_GAN + (10.0 * total_cycle_loss) + (5.0 * total_identity_loss) + total_scale_loss
             loss_G.backward()
             optimizer_G.step()
 
@@ -304,6 +308,7 @@ def train_model(training_dataset_path, testing_dataset_path, num_epoch, batch_si
         RRE = []
         RTE = []
 
+
         print("[INFO]: evaluating the model...")
         print(testing_root_content)
         for i in range(len(testing_root_content)):
@@ -331,11 +336,13 @@ def train_model(training_dataset_path, testing_dataset_path, num_epoch, batch_si
                     real_fr2 = real_rgb2.to(DEVICE)
                     stacked_frame11 = torch.cat([real_fr1, real_fr1], dim=1)
                     stacked_frame22 = torch.cat([real_fr2, real_fr2], dim=1)
+
                     # Evaluate GAN & POSE
 
                     # Adversarial ground truths
-                    valid = torch.Tensor(np.ones((real_fr1.size(0), *PaD_shape.output_shape))).to(DEVICE)  # requires_grad = False. Default.
-                    fake = torch.Tensor(np.zeros((real_fr1.size(0), *PaD_shape.output_shape))).to(DEVICE)  # requires_grad = False. Default.
+                    disc_output = (PaD_shape.output_shape[0], 2 * PaD_shape.output_shape[1], 2 * PaD_shape.output_shape[2])
+                    valid = torch.Tensor(np.ones((real_fr1.size(0), *disc_output))).to(DEVICE)  # requires_grad = False. Default.
+                    fake = torch.Tensor(np.zeros((real_fr1.size(0), *disc_output))).to(DEVICE)  # requires_grad = False. Default.
 
                     # Estimate the pose
                     stacked_frame12 = torch.cat([real_fr1, real_fr2], dim=1)
@@ -406,7 +413,10 @@ def train_model(training_dataset_path, testing_dataset_path, num_epoch, batch_si
                                                                           recov_fr2, real_fr2, recov_P21, estimated_pose_BA_SE3,
                                                                           weights_cycle_loss)
 
-                    loss_G = loss_GAN + (10.0 * total_cycle_loss) + (5.0 * total_identity_loss)
+                    scale_loss_AB = scale_consistency_loss(estimated_pose_AB_SE3)
+                    scale_loss_BA = scale_consistency_loss(estimated_pose_BA_SE3)
+                    total_scale_loss = (scale_loss_AB + scale_loss_BA)/2
+                    loss_G = loss_GAN + (10.0 * total_cycle_loss) + (5.0 * total_identity_loss) + total_scale_loss
                     # Evaluate Discriminators
                     prev_frame_real = torch.cat([real_fr1, real_fr1], dim=1)
                     prev_frame_fake = torch.cat([fake_fr1.detach(), fake_fr1.detach()], dim=1)
@@ -415,6 +425,7 @@ def train_model(training_dataset_path, testing_dataset_path, num_epoch, batch_si
 
                     loss_DB = losses.standard_discriminator_loss(PaD_B(prev_frame_real, task='discriminator'), valid,
                                                                  PaD_B(prev_frame_fake, task='discriminator'), fake)
+
 
                     # total discriminator loss (not backwarded! -> used only for tracking)
                     loss_D = (loss_DA + loss_DB) / 2
@@ -426,6 +437,7 @@ def train_model(training_dataset_path, testing_dataset_path, num_epoch, batch_si
                     loss_testing_identity_epoch += total_identity_loss.item()
 
                     num_batches += 1
+
 
             # compute ATE, ARE, RRE, RTE
             # save trajectory in kitti format
@@ -555,7 +567,7 @@ parser.add_argument("--load_model", type=int, help="Flag to indicate whether to 
 
 parser.add_argument("--num_worker", type=int, default=10, help="Number of workers (default: 10)")
 parser.add_argument("--lr", type=float, default=0.0002, help="Learning rate (default: 0.0002)")
-parser.add_argument("--input_shape", type=int, nargs=3, default=[6, 256, 256], help="Input shape as a list (default: [3, 256, 256])")
+parser.add_argument("--input_shape", type=int, nargs=3, default=[6, 128, 128], help="Input shape as a list (default: [3, 256, 256])")
 parser.add_argument("--standard_cycle", type=int, help="Standard flag (default: False)")
 parser.add_argument("--standard_identity", type=int, help="Standard flag (default: False)")
 parser.add_argument("--weigths_id_loss", nargs='*', type=float)

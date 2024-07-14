@@ -29,8 +29,8 @@ class LieEuclideanMapper:
     This class maps poses between the Lie space and the Euclidean space.
     '''
 
-    @staticmethod
-    def se3_to_SE3(se3: np.ndarray) -> np.ndarray:
+    
+    def se3_to_SE3(self, se3: np.ndarray) -> np.ndarray:
         '''
         This function converts a 6-dof vector (se(3)) to a 4x4 matrix (SE(3))
 
@@ -62,8 +62,8 @@ class LieEuclideanMapper:
         # Return the constructed SE(3) matrix
         return SE3
 
-    @staticmethod
-    def SE3_to_se3(pose_homo: np.ndarray) -> np.ndarray:
+    
+    def SE3_to_se3(self, pose_homo: np.ndarray) -> np.ndarray:
         '''
         Convert the ground truth SE(3) to se(3) [4x4 matrix (SE(3)) ->  6-dof vector (se(3))]
 
@@ -96,7 +96,7 @@ class LieEuclideanMapper:
 
 
 class PoseOperator:
-    @staticmethod
+    
     def compute_relative_pose(self, SE3_1: np.ndarray, SE3_2: np.ndarray) -> np.ndarray:
         '''
         This function computes the relative pose given two poses in SE(3) representation
@@ -122,27 +122,26 @@ class PoseOperator:
         # Return the computed relative pose in SE(3) representation
         return SE3_relative
 
-    @staticmethod
-    def quaternion_to_rotation_matrix(q):
+    
+    def quaternion_to_rotation_matrix(self, q):
         """Convert a quaternion to a rotation matrix."""
         return R.from_quat(q).as_matrix()
 
-    @staticmethod
-    def ensure_so3(matrix):
+    
+    def ensure_so3(self, matrix):
         """Ensure that the given matrix is a valid member of the SO(3) group."""
         U, _, Vt = np.linalg.svd(matrix)
         R = np.dot(U, Vt)
         return R
-    @staticmethod
-    def ensure_so3_v2(matrix):
+    
+    def ensure_so3_v2(self, matrix):
         """
         Projects a 3x3 matrix to the closest SO(3) matrix using an alternative method.
         """
         try:
             U, _, Vt = np.linalg.svd(matrix)
         except:
-            print(matrix)
-            sys.exit()
+            raise Exception("failed to ensure so3 validity")
 
         # Creating the intermediate diagonal matrix
         D = np.eye(3)
@@ -153,7 +152,7 @@ class PoseOperator:
 
         return R
 
-
+    
     def _sqrt_positive_part(self, x: torch.Tensor) -> torch.Tensor:
         """
         Returns torch.sqrt(torch.max(0, x))
@@ -164,8 +163,8 @@ class PoseOperator:
         ret[positive_mask] = torch.sqrt(x[positive_mask])
         return ret
 
-    @staticmethod
-    def matrix_to_quaternion(matrix: torch.Tensor) -> torch.Tensor:
+    
+    def matrix_to_quaternion(self, matrix: torch.Tensor) -> torch.Tensor:
         # PYTORCH3D FUNCTION
         """
         Convert rotations given as rotation matrices to quaternions.
@@ -227,8 +226,8 @@ class PoseOperator:
                F.one_hot(q_abs.argmax(dim=-1), num_classes=4) > 0.5, :
                ].reshape(batch_dim + (4,))
 
-    @staticmethod
-    def quaternion_to_matrix(quaternions: torch.Tensor) -> torch.Tensor:
+    
+    def quaternion_to_matrix(self, quaternions: torch.Tensor) -> torch.Tensor:
         # From Pytorch3D
         """
         Convert rotations given as quaternions to rotation matrices.
@@ -260,7 +259,7 @@ class PoseOperator:
         )
         return o.reshape(quaternions.shape[:-1] + (3, 3))
 
-    @staticmethod
-    def normalize_quaternion(q):
+    
+    def normalize_quaternion(self, q):
         norm = torch.norm(q, p=2, dim=-1, keepdim=True)
         return q / norm

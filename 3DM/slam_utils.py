@@ -194,6 +194,9 @@ class RGBD:
         self.cv2_color = self._read_color_cv2(color_path)
         self.cv2_depth = self._read_depth_cv2(depth_path)
 
+        # store colored_depth
+        self.colored_depth = self._compute_colored_depth(depth_path)
+
         # store pil color
         self.pil_color = self._read_color_PIL(color_path)
 
@@ -226,8 +229,8 @@ class RGBD:
         return cv2.imread(img_path)
 
     def _read_depth_cv2(self, depth_path: str) -> np.ndarray:
-        #return cv2.imread(depth_path, cv2.IMREAD_ANYDEPTH).astype(np.float32) / self.depth_scale
-        return cv2.imread(depth_path, cv2.IMREAD_ANYDEPTH).astype(np.float32)
+        return cv2.imread(depth_path, cv2.IMREAD_ANYDEPTH).astype(np.float32) / self.depth_scale
+        #return cv2.imread(depth_path, cv2.IMREAD_ANYDEPTH).astype(np.float32)
 
     def _read_color_PIL(self, img_path: str) -> PIL.Image.Image:
         return Image.open(img_path)
@@ -243,3 +246,19 @@ class RGBD:
         width = img.shape[1]
 
         return height, width
+
+    def _compute_colored_depth(self, depth_path: str) -> np.ndarray:
+        # Load your 16-bit depth image
+        # Replace 'path_to_your_depth_image.png' with your actual image path
+        depth_image = cv2.imread(depth_path, -1)  # -1 ensures the image is read in its original depth
+
+        # Normalize the depth image to 8-bit for visualization
+        # Find the maximum and minimum values in the depth image
+        min_val, max_val, _, _ = cv2.minMaxLoc(depth_image)
+        # Scale the values to lie between 0 and 255
+        normalized_depth = np.uint8(255 * (depth_image - min_val) / (max_val - min_val))
+
+        # Apply a colormap for better visualization
+        colored_depth = cv2.applyColorMap(normalized_depth, cv2.COLORMAP_JET)
+
+        return o3d.geometry.Image(colored_depth)

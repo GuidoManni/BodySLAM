@@ -16,7 +16,69 @@ import torch.nn as nn
 import numpy as np
 
 # internal lIB
-from UTILS.geometry_utils import PoseOperator as PO
+from UTILS.geometry_utils import PoseOperator
+PO = PoseOperator()
+
+class LearnableScaleConsistencyLoss(nn.Module):
+    def __init__(self, device, initial_scale=1.0):
+        """
+        Initialize the loss function with an initial scale, which will become a learnable parameter.
+
+        Args:
+        - initial_scale: Scalar representing the initial guess for the desired scale. Default is 1.0.
+        """
+        super(LearnableScaleConsistencyLoss, self).__init__()
+        # Initialize the desired scale as a learnable parameter
+        self.desired_scale = nn.Parameter(torch.tensor([initial_scale] * 3).to(device))  # Assuming 3D scale (x, y, z)
+
+    def forward(self, motion_matrices):
+        """
+        Compute the scale consistency loss for the translation components of motion matrices,
+        considering each axis separately.
+
+        Args:
+        - motion_matrices: Tensor of shape (batch_size, 4, 4) representing the motion matrices.
+
+        Returns:
+        - loss: Scalar tensor representing the scale consistency loss.
+        """
+        # Extract translation components (assuming they are in the last column)
+        translations = motion_matrices[:, :3, 3]  # Extract the first 3 elements of the last column
+
+        # Compute the absolute difference between the translation components and the learnable desired scale along each axis
+        differences = torch.abs(translations - self.desired_scale)
+
+        # Compute the loss as the mean of the differences
+        loss = torch.mean(differences)
+
+        return loss
+
+class TranslationLoss(nn.Module):
+    def __init__(self, alpha=0.5):
+        """
+        Initialize the combined loss module.
+        :param alpha: Weight factor for the balance between MSE and Cosine Similarity loss.
+                      alpha=0.5 gives equal weight to both. Adjust as needed.
+        """
+        super(TranslationLoss, self).__init__()
+        self.alpha = alpha
+        self.mse_loss = nn.MSELoss()
+        self.cosine_loss = nn.CosineSimilarity(dim=1)
+
+    def forward(self, predicted, target):
+        """
+        Forward pass for the combined loss.
+        :param predicted: Predicted translation vectors.
+        :param target: Ground truth translation vectors.
+        :return: Combined loss value.
+        """
+        mse = self.mse_loss(predicted, target)
+        cosine_similarity = self.cosine_loss(predicted, target)
+        cosine_loss = 1 - cosine_similarity.mean()  # 1 - cosine_similarity to make it a loss
+        combined_loss = self.alpha * mse + (1 - self.alpha) * cosine_loss
+        return combined_loss
+
+
 
 class TrainingLoss:
     def __init__(self):
@@ -28,7 +90,17 @@ class TrainingLoss:
          self.standard_cycle_loss = nn.L1Loss()
          self.standard_GAN_loss = nn.MSELoss()
          self.standard_Discr_loss = nn.MSELoss()
-         self.translation_loss = nn.MSELoss()
+         self.translation_loss = TranslationLoss(alpha=0.5)
+         self.mse_scale_loss = nn.MSELoss()
+
+    def translation_loss_consistency(self, motion_matricesAB, motion_matricesBA):
+        translationAB = motion_matricesAB[:, :3, 3]
+        translationBA = motion_matricesBA[:, :3, 3]
+
+        # the need to be equal in module but with opposite signs
+        loss = self.mse_scale_loss(translationAB, translationBA)
+
+        return loss
 
     def _sqrt_positive_part(self, x: torch.Tensor) -> torch.Tensor:
         """
@@ -40,7 +112,7 @@ class TrainingLoss:
         ret[positive_mask] = torch.sqrt(x[positive_mask])
         return ret
 
-    def motion_matrix_to_pose7(self, matrix: torch.Tensor) -> torch.Tensor:
+    def motion_matrix_to_pose7(self, matrix: torch.Tensor):
         """
         Convert 4x4 motion matrix to a 7-element vector with 3 translation values and 4 quaternion values.
 
@@ -233,7 +305,7 @@ class TrainingLoss:
 
         return standard_total_cycle_loss
 
-    def custom_total_cycle_loss(self, recov_frA, real_frA, recov_PA, real_PA, recov_frB, real_frB, recov_PB, real_PB, weights = [0.5, 0.5, 0.5, 0.5]):
+    def custom_total_cycle_loss(self, recov_frA, real_frA, recov_PA, real_PA, recov_frB, real_frB, recov_PB, real_PB, weights = [0.5, 0.5, 0.5, 0.5, 0.5]):
         '''
         Compute a modified total cycle loss where the identity constraint is also applied on the pose. The formula used is:
 
@@ -261,8 +333,9 @@ class TrainingLoss:
         loss_cycle_frB = self.standard_criterion_cycle_loss(recov_frB, real_frB)
         loss_cycle_PA = self.cycle_loss_for_pose(recov_PA, real_PA)
         loss_cycle_PB = self.cycle_loss_for_pose(recov_PB, real_PB)
+        loss_consistency = self.translation_loss_consistency(recov_PA, recov_PB)
 
-        custom_total_cycle_loss = (weights[0] * loss_cycle_frA + weights[1] * loss_cycle_frB + weights[2] * loss_cycle_PA + weights[3] * loss_cycle_PB)
+        custom_total_cycle_loss = (weights[0] * loss_cycle_frA + weights[1] * loss_cycle_frB + weights[2] * loss_cycle_PA + weights[3] * loss_cycle_PB + weights[4] * loss_consistency)
 
         return custom_total_cycle_loss
 
@@ -435,8 +508,7 @@ class TrainingLoss:
         ate: Absolute Trajectory Error
         are: Absolute Rotation Error
         """
-        print(f"ground_truth: {len(ground_truth)}")
-        print(f"predictions: {len(predictions)}")
+
         assert len(ground_truth) == len(predictions), "Ground truth and predictions must have the same length"
 
         scale_factor = self.compute_scale_factor(ground_truth, predictions)

@@ -3,15 +3,47 @@ import torch
 import open3d as o3d
 import open3d.core as o3c
 import numpy
+import random
+from filterpy.kalman import UnscentedKalmanFilter, MerweScaledSigmaPoints
+
+from scaling_system import *
+
 
 # Interna Modules
 from MPEM.mpem_interface import *
 
 class VO:
-    def __init__(self, path_to_model: str, intrinsic_t):
+    def __init__(self, path_to_model: str, intrinsic_t, intrinsic):
         self.mpem_interface = MPEMInterface(path_to_model)
         self.intrinsic_t = intrinsic_t
+        self.intrinsic = intrinsic
         self.baseline = np.eye(4)
+        self.scale_factor = np.array([0, 0, 0])
+
+        state_dim = 3  # [x, y, z] translation vector
+        measurement_dim = 3  # [x, y, z] from RGB-D odometry
+
+        # Sigma points for UKF
+        sigma_points = MerweScaledSigmaPoints(n=state_dim, alpha=1.0, beta=2., kappa=3)
+
+        # Initialize the UKF
+        self.ukf = UnscentedKalmanFilter(dim_x=state_dim, dim_z=measurement_dim, dt=1,
+                                    fx=self.state_transition_function, hx=self.measurement_function,
+                                    points=sigma_points)
+
+        # Initial state and covariance
+        self.ukf.x = np.zeros(state_dim)  # Initial state (translation vector)
+        self.ukf.P *= 0.1  # Initial state covariance
+
+
+    def state_transition_function(self, translation_vector, dt = None):
+        # Use your deep learning model to predict the next state
+        # Implement the function that interfaces with your model
+        return translation_vector
+
+    def measurement_function(self, rgbd_translation):
+        # Use RGB-D odometry to provide a translation vector
+        return rgbd_translation
 
 
     def compute_scale_factor(self, t_vector, t_scale_vector):
@@ -23,7 +55,9 @@ class VO:
         return scale_factor
 
 
-    def estimate_relative_pose_between(self, prev_frame: str, curr_frame: str, prev_rgbd, curr_rgbd, i) -> np.ndarray:
+
+
+    def estimate_relative_pose_between(self, prev_frame: str, curr_frame: str, prev_rgbd, curr_rgbd, i, rgbd_odo = True) -> np.ndarray:
         '''
         This function uses the Monocular Pose Estimaiton Module (MPEM) to estimate the relative motion
         (or transformation) between two consecutive frames.
@@ -33,19 +67,28 @@ class VO:
         '''
         transformation = self.mpem_interface.infer_relative_pose_between(prev_frame, curr_frame)
 
+        if rgbd_odo:
+            disp = self._compute_vo_o3d(curr_rgbd, prev_rgbd)[:3, 3]
+            self.ukf.predict(transformation[:3, 3])
+            self.ukf.update(disp)
 
-        self.baseline = self._compute_vo_o3d(curr_rgbd, prev_rgbd)[:3, 3]
-
-        scale_factor = self.compute_scale_factor(transformation[:3, 3], self.baseline)
-
-
-
-
-        #scale_factor = np.sum(self.baseline * transformation[:3,3])/np.sum(transformation[:3,3] ** 2)
-        #r, scale_factor, t = self.estimate_similarity_transformation(self.baseline, transformation)
+        else:
+            disp1 = compute_scaling_factor(curr_rgbd.cv2_color, prev_rgbd.cv2_color, curr_rgbd.cv2_depth, prev_rgbd.cv2_depth, self.intrinsic)
+            self.ukf.predict(transformation[:3, 3])
+            self.ukf.update(disp1)
 
 
-        transformation[:3, 3] =  transformation[:3, 3] * scale_factor
+        #scale_factor = self.compute_scale_factor(transformation[:3, 3], disp1)
+
+        #transformation[:3, 3] = transformation[:3, 3] * scale_factor
+
+
+        #rgbd_odo = self._compute_vo_o3d(curr_rgbd, prev_rgbd)
+
+        #self.scale_factor = self.compute_scale_factor(transformation[:3, 3], disp1)
+
+        transformation[:3, 3] = self.ukf.x
+
 
         return transformation
 

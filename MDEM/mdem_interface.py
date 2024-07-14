@@ -50,8 +50,8 @@ class MDEMInterface:
 
         return zoe
 
-    @staticmethod
-    def infer_monocular_depth_map(path_to_frame: str) -> Image.Image:
+
+    def infer_monocular_depth_map(self, path_to_frame: str) -> Image.Image:
         '''
         This method infer the depth map, using ZOE, from a monocular frame
         Parameters:

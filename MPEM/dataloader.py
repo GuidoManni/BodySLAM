@@ -28,7 +28,8 @@ import cv2
 
 # Internal module
 from UTILS.io_utils import FrameIO, XlsxIO
-from UTILS.geometry_utils import PoseOperator as PO
+from UTILS.geometry_utils import PoseOperator
+PO = PoseOperator()
 
 
 class PoseDatasetLoader(Dataset):
@@ -39,7 +40,8 @@ class PoseDatasetLoader(Dataset):
         '''
         Init function
 
-        Parameters:
+        Parameters:from PyPDF2 import PdfReader
+import docx
         - list_of_frames: a list of path [list[str]]
         - list_of_absolute_poses: a list of ground truth poses [list]
         - dataset_type: the dataset to load [str]

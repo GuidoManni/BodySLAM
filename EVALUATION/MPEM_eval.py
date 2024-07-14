@@ -10,6 +10,7 @@ This script perform the evaluation of the MPE module
 import os
 import json
 import csv
+import time
 
 # Computational Module
 import numpy as np
@@ -151,6 +152,10 @@ def save_poses_to_csv(motion_matrices, filename):
 def load_SCARED_poses(path_to_dataset):
     folders = os.listdir(path_to_dataset)
 
+    for folder in folders:
+        if not os.path.isdir(os.path.join(path_to_dataset, folder)):
+            folders.remove(folder)
+
     dataset_dict = {}
 
     for folder in folders:
@@ -199,6 +204,7 @@ def compute_poses(dataset_paths, saving_path_for_prediction):
     '''
 
     poses_path = {}
+    TIMES = []
     # to compute the poses we need to infer it using the cyclepose
     for folder in dataset_paths.keys():
         poses_list = []
@@ -206,6 +212,7 @@ def compute_poses(dataset_paths, saving_path_for_prediction):
         initial_pose = np.eye(4)
         absolute_pose = initial_pose
         absolute_poses = [initial_pose]
+        start_time = time.time()
         for i in tqdm(range(num_of_frames)):
             if i < num_of_frames - 1:
                 path_to_frame1 = dataset_paths[folder]['Frames'][i]
@@ -214,11 +221,16 @@ def compute_poses(dataset_paths, saving_path_for_prediction):
                 absolute_pose = absolute_pose @ relative_pose
                 absolute_pose[:3, :3] = poseOperator.ensure_so3_v2(absolute_pose[:3, :3])
                 absolute_poses.append(absolute_pose)
+        end_time = time.time()
+        TIMES.append(end_time - start_time)
 
         file_name = folder + ".txt"
         save_poses_as_kitti(absolute_poses, os.path.join(saving_path_for_prediction, file_name))
 
         poses_path[folder] = os.path.join(saving_path_for_prediction, file_name)
+
+    avg_times = sum(TIMES) / len(TIMES)
+    print(f"Average time: {avg_times}")
 
     return poses_path
 
@@ -313,16 +325,20 @@ csvIO = CSVIO()
 mpem_metrics = MPEM_Metrics()
 
 # ENDOSLAM
-# path_to_dataset = "/home/gvide/Dataset/EndoSlam_testing"
-# results_path = "/home/gvide/Scrivania/BodySLAM Results/MPEM Validation/BodySLAM/EndoSLAM_Results/"
+path_to_dataset = "/home/gvide/Dataset/EndoSlam_testing"
+results_path = "/home/gvide/Scrivania/Models/Model_16_Results/Results_EndoSLAM/"
+dataset_type = "EndoSlam"
+saving_path_for_prediction ="/home/gvide/PycharmProjects/SurgicalSlam/tmp/"
 
 # SCARED
-path_to_dataset = "/home/gvide/Dataset/SCARED_only_rgb"
-results_path = "/home/gvide/Scrivania/BodySLAM Results/MPEM Validation/BodySLAM/SCARED_Results/"
+#path_to_dataset = "/home/gvide/Dataset/SCARED_only_rgb"
+#results_path = "/home/gvide/Scrivania/Models/Model_16_Results/Results_SCARED/"
+#dataset_type = "SCARED"
+#saving_path_for_prediction = "/home/gvide/PycharmProjects/SurgicalSlam/tmp/"
 
-saving_path_for_prediction = "/home/gvide/Scrivania/test"
 
-#path_to_model = "/home/gvide/PycharmProjects/SurgicalSlam/MPEM/Model/15_best_model_PaD_B.pth"
-path_to_model = "/home/gvide/PycharmProjects/SurgicalSlam/MPEM/Model/3_best_model_gen_ab.pth"
+
+#path_to_model = "/home/gvide/PycharmProjects/SurgicalSlam/MPEM/Model/16_best_model_PaD_B.pth"
+path_to_model = "/home/gvide/PycharmProjects/SurgicalSlam/MPEM/Model/7_best_model_gen_ab.pth"
 mpem_interface = MPEMInterface(path_to_model=path_to_model)
-evaluate_MPEM("SCARED", path_to_dataset, saving_path_for_prediction, results_path, True)
+evaluate_MPEM(dataset_type, path_to_dataset, saving_path_for_prediction, results_path, True)

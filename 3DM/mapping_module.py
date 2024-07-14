@@ -16,7 +16,6 @@ class MappingModule:
         self.scene_mesh = o3d.t.geometry.TriangleMesh
         self.scene_pcd = o3d.t.geometry.PointCloud
 
-        self.poisson_depth = 6
         self.poisson_quantile = 0.01
 
 
@@ -27,10 +26,73 @@ class MappingModule:
 
     def integrate(self, curr_rgbd, extrinsics, id):
         # step 1: check if it's the first integration
-        if id==0:
+        if id == 0:
             # if it is empty then we are in the first iteration
             self._first_integration(curr_rgbd.rgbd_t, extrinsics)
         else:
+            # step 2: compute the raycasting on the current scene with the new camera pose
+            synthetic_dp = self._compute_synthetic_depth(extrinsics, id)
+
+            # step 3: reconstruct synthetic pcd
+            synthetic_pcd = o3d.geometry.PointCloud.create_from_depth_image(synthetic_dp, self.intrinsics, extrinsics)
+            #o3d.visualization.draw_geometries([synthetic_pcd])
+
+            # step 4: reconstruct curr pcd
+            curr_pcd = o3d.geometry.PointCloud.create_from_rgbd_image(curr_rgbd.rgbd, intrinsic=self.intrinsics, extrinsic=extrinsics)
+            curr_pcd_t = o3d.t.geometry.PointCloud.create_from_rgbd_image(curr_rgbd.rgbd_t, intrinsics=self.intrinsics_t, extrinsics=extrinsics)
+
+            # step 5: compute the distance between the synthetic pcd and the current pcd
+            dists_synt_curr = np.array(synthetic_pcd.compute_point_cloud_distance(curr_pcd))
+
+            # step 6: compute the distance between the curr pcd and the synthetic pcd
+            dists_curr_synt = np.array(curr_pcd.compute_point_cloud_distance(synthetic_pcd))
+
+            # step 7: get from dist_synt_curr the part to remove from the synthetic pcd
+            ind_sc = np.where(dists_synt_curr < 0.01)[0]
+            pcd_rm = synthetic_pcd.select_by_index(ind_sc)
+
+            #o3d.visualization.draw_geometries([pcd_rm])
+
+            # step 8: get from dist_curr_synt the part to integrate
+            ind_cs = o3d.core.Tensor(np.where(dists_curr_synt > 0.01)[0]).to(self.device)
+            pcd_add = curr_pcd_t.select_by_index(ind_cs)
+
+            # step 9: now we use pcd_rm to remove the portion from the scene
+            pcd_scene = self.scene_pcd.to_legacy()
+            dist_scene_rm = np.array(pcd_scene.compute_point_cloud_distance(pcd_rm))
+            ind_to_remove = np.where(dist_scene_rm > 0.01)[0]
+            self.scene_pcd = o3d.t.geometry.PointCloud.from_legacy(pcd_scene.select_by_index(ind_to_remove)).to(self.device)
+            #o3d.visualization.draw_geometries([self.scene_pcd.to_legacy()])
+            #o3d.visualization.draw_geometries([pcd_scene])
+            #self.scene_pcd += o3d.t.geometry.PointCloud.from_legacy(pcd_add)
+            self.scene_pcd += pcd_add
+
+            pcd_scene = self.scene_pcd.to_legacy()
+
+            #pcd_scene = pcd_scene.voxel_down_sample(0.005)
+            diameter = np.linalg.norm(
+                np.asarray(pcd_scene.get_max_bound()) - np.asarray(pcd_scene.get_min_bound()))
+            camera = o3d.core.Tensor([0, 0, diameter], o3d.core.float32).to(self.device)
+            radius = diameter * 100
+
+            _, pt_map = self.scene_pcd.hidden_point_removal(camera, radius)
+            self.scene_pcd = self.scene_pcd.select_by_index(pt_map)
+
+            #o3d.visualization.draw_geometries([pcd_scene])
+
+            #self.scene_pcd = o3d.t.geometry.PointCloud.from_legacy(pcd_scene)
+
+            if id % 1000 == 0:
+
+                cl, ind = self.scene_pcd.remove_statistical_outliers(nb_neighbors=20,
+                                                                 std_ratio=2.0)
+
+                self.scene_pcd = cl
+
+            self._update_scene_pcd()
+
+
+
             '''
             # step 2: compute the raycasting on the current scene with the new camera pose
             synthetic_dp = self._compute_synthetic_depth(extrinsics, id)
@@ -66,7 +128,7 @@ class MappingModule:
 
             # step 8: we update also the pcd
             self._update_scene_pcd()
-            '''
+            self.scene_pcd.to_legacy()
             curr_pcd = o3d.t.geometry.PointCloud.create_from_rgbd_image(curr_rgbd.rgbd_t, intrinsics=self.intrinsics_t, extrinsics=extrinsics)
 
             #o3d.visualization.draw_geometries([self.scene_pcd.to_legacy()])
@@ -101,13 +163,14 @@ class MappingModule:
             #o3d.visualization.draw_geometries([self.scene_pcd.to_legacy()])
 
             # update the scene
+            '''
 
 
 
 
     def _first_integration(self, curr_rgbd, extrinsics):
         # step 1: initialize the pcd with the first view
-        self.scene_pcd = self.scene_pcd.create_from_rgbd_image(rgbd_image=curr_rgbd, intrinsics=self.intrinsics_t, extrinsics=extrinsics)
+        self.scene_pcd = self.scene_pcd.create_from_rgbd_image(rgbd_image=curr_rgbd, intrinsics=self.intrinsics_t, extrinsics=extrinsics).to(self.device)
 
         # step 2: we reconstruct the mesh
         self.scene_mesh = self._reconstruct_mesh_from_pcd(self.scene_pcd)
@@ -146,7 +209,7 @@ class MappingModule:
         camera_pose_t = o3d.core.Tensor(camera_pose)
 
         # step 2: create raycast object
-        rays = o3d.t.geometry.RaycastingScene.create_rays_pinhole(self.intrinsics, camera_pose_t, width_px=600, height_px=480)
+        rays = o3d.t.geometry.RaycastingScene.create_rays_pinhole(self.intrinsics_t, camera_pose_t, width_px=600, height_px=480)
 
         # step 3: perform raycast
         raycast_result = raycasting_scene.cast_rays(rays)
@@ -162,7 +225,7 @@ class MappingModule:
         plt.imsave(save_path_img, dp, cmap='gray')  # Use cmap='gray' for grayscale images
         np.save(save_path_np, dp)
 
-        return dp
+        return o3d.geometry.Image(dp)
 
     def _create_raycasting_scene(self):
         # step 2: create scene
@@ -225,4 +288,3 @@ class MappingModule:
 
         scene_pcd = mesh.sample_points_uniformly(number_of_points=10)
         self.scene_pcd.from_legacy(scene_pcd)
-

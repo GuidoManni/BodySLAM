@@ -3,12 +3,12 @@ import numpy as np
 from copy import deepcopy
 
 class TSDF:
-    def __init__(self, voxel_length: float = 0.006, sdf_trunc: float = 0.2):
+    def __init__(self, voxel_length: float = 0.001, sdf_trunc: float = 0.1):
         self.tsdf = o3d.pipelines.integration.ScalableTSDFVolume(
                     voxel_length=voxel_length,
                     sdf_trunc=sdf_trunc,
                     color_type=o3d.pipelines.integration.TSDFVolumeColorType.RGB8,
-                    volume_unit_resolution = 16,
+                    volume_unit_resolution = 32,
                     depth_sampling_stride = 8)
 
     def build_3D_map(self, rgbd: o3d.geometry.RGBDImage, intrinsic: o3d.camera.PinholeCameraIntrinsic, extrinsic):

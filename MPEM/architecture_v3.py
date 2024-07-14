@@ -13,7 +13,9 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 # Internal module
-from UTILS.geometry_utils import PoseOperator as PO
+from UTILS.geometry_utils import PoseOperator
+PO = PoseOperator()
+
 
 
 
@@ -111,7 +113,7 @@ class ConditionalGenerator(nn.Module):
         self.device = device
         self.skip_linear = None
 
-        self.reproject = nn.Conv2d(input_shape[1] + condition_dim, 256, kernel_size=1, stride=1, padding=0)
+        self.reproject = nn.Conv2d(256 + condition_dim, 256, kernel_size=1, stride=1, padding=0)
 
         # Initial Convolution Block
         out_features = 64
@@ -236,3 +238,26 @@ class ConditionalGenerator(nn.Module):
         else:
             raise ValueError(f"Unsupported mode: {mode}. Choose between 'generate' and 'pose'.")
 
+
+
+if __name__ == "__main__":
+    disc = MultiTaskModel(input_shape=(6, 128, 128), device='cpu').to('cpu')
+    gen = ConditionalGenerator(input_shape=(6, 128, 128), device='cpu')
+
+    test = torch.randn(12, 3, 128, 128).to('cpu')
+
+    test_test = torch.cat([test, test], dim=1)
+
+    disc_output = disc(test_test)
+
+    gen_pose = gen(test_test, mode="pose")
+
+    gen_img = gen(test_test, gen_pose, mode="generate")
+
+
+    print(f"gen_img.shape: {gen_img.shape}")
+    print(f"gen_pose.shape: {gen_pose.shape}")
+    print(f"disc.shape: {disc_output.shape}")
+
+    disc_output = (disc.output_shape[0], 2 * disc.output_shape[1], 2 * disc.output_shape[2])
+    print(disc_output)

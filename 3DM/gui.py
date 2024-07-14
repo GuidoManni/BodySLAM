@@ -21,9 +21,11 @@ class ReconstructionWindow:
         self.window = gui.Application.instance.create_window('BodySLAM', 1280, 800)
 
         # initialize slam
+        #depth_map_path = "/home/gvide/Scrivania/BodySLAM Results/3DM/BodySLAM/highcam_small_intestine_trajectory_1/depth"
+        #rgb_path = "/home/gvide/Scrivania/BodySLAM Results/3DM/BodySLAM/highcam_small_intestine_trajectory_1/Frames"
         depth_map_path = "/home/gvide/Scrivania/slam_test/depth01"
         rgb_path = "/home/gvide/Scrivania/slam_test/image01"
-        path_to_model = "/home/gvide/PycharmProjects/BodySLAM/MPEM/Model/9_best_model_gen_ab.pth"
+        path_to_model = "/home/gvide/PycharmProjects/SurgicalSlam/MPEM/Model/9_best_model_gen_ab.pth"
 
         rgb_list = sorted(os.listdir(rgb_path))
         depth_list = sorted(os.listdir(depth_map_path))
@@ -138,14 +140,15 @@ class ReconstructionWindow:
         self.widget3d = gui.SceneWidget()
 
         # FPS panel
+        '''
         self.fps_panel = gui.Vert(spacing, margins)
         self.output_fps = gui.Label('FPS: 0.0')
         self.fps_panel.add_child(self.output_fps)
-
+        '''
         # Now add all the complex panels
         w.add_child(self.panel)
         w.add_child(self.widget3d)
-        w.add_child(self.fps_panel)
+        #w.add_child(self.fps_panel)
 
         self.widget3d.scene = rendering.Open3DScene(self.window.renderer)
         self.widget3d.scene.set_background([1, 1, 1, 1])
@@ -177,11 +180,11 @@ class ReconstructionWindow:
         self.widget3d.frame = gui.Rect(x, rect.y,
                                        rect.get_right() - x, rect.height)
 
-        fps_panel_width = 7 * em
-        fps_panel_height = 2 * em
-        self.fps_panel.frame = gui.Rect(rect.get_right() - fps_panel_width,
-                                        rect.y, fps_panel_width,
-                                        fps_panel_height)
+        #fps_panel_width = 7 * em
+        #fps_panel_height = 2 * em
+        #self.fps_panel.frame = gui.Rect(rect.get_right() - fps_panel_width,
+        #                                rect.y, fps_panel_width,
+        #                                fps_panel_height)
 
     def _on_switch(self, is_on):
         if not self.is_started:
@@ -275,7 +278,7 @@ class ReconstructionWindow:
                 curr_rgbd, pcd, curr_global_pose = self.slam._first_loop()
                 pcd = o3d.t.geometry.PointCloud.from_legacy(pcd)
                 gui.Application.instance.post_to_main_thread(
-                    self.window, lambda: self.init_render(curr_rgbd.o3d_depth, curr_rgbd.o3d_color))
+                    self.window, lambda: self.init_render(curr_rgbd.colored_depth, curr_rgbd.o3d_color))
             if self.idx > 0:
                 curr_rgbd, prev_rgbd, pcd, curr_global_pose = self.slam._sequential_loop(self.idx)
                 pcd = o3d.t.geometry.PointCloud.from_legacy(pcd)
@@ -286,7 +289,7 @@ class ReconstructionWindow:
                 frustum.paint_uniform_color([0.961, 0.475, 0.000])
 
                 gui.Application.instance.post_to_main_thread(
-                    self.window, lambda: self.update_render(curr_rgbd.o3d_depth, curr_rgbd.o3d_color, pcd=pcd, frustum=frustum))
+                    self.window, lambda: self.update_render(curr_rgbd.colored_depth, curr_rgbd.o3d_color, pcd=pcd, frustum=frustum))
 
             self.idx += 1
 
