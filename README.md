@@ -35,10 +35,18 @@ The framework consists of three key modules:
 (Usage guidelines and examples will be added after the code refactoring and documentation improvements.)
 
 ## Citation
+If you use or find this work useful, please cite our paper:
 
-If you use BodySLAM in your research, please cite our upcoming paper:
-
-(Citation details will be provided once the paper is published.)
+```bibtex
+@misc{manni2024bodyslamgeneralizedmonocularvisual,
+      title={BodySLAM: A Generalized Monocular Visual SLAM Framework for Surgical Applications}, 
+      author={G. Manni and C. Lauretti and F. Prata and R. Papalia and L. Zollo and P. Soda},
+      year={2024},
+      eprint={2408.03078},
+      archivePrefix={arXiv},
+      primaryClass={cs.CV},
+      url={https://arxiv.org/abs/2408.03078}, 
+}
 
 ## License
 
