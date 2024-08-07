@@ -48,8 +48,3 @@ If you use or find this work useful, please cite our paper:
       url={https://arxiv.org/abs/2408.03078}, 
 }
 
-## License
-
-(License information will be added)
-
-
