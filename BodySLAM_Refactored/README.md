@@ -39,7 +39,6 @@ In the challenging world of endoscopic surgeries, where hardware limitations and
 - **State-of-the-Art Depth Estimation**: Utilizes the Zoe model for accurate monocular depth estimation
 - **Novel Pose Estimation**: Implements CyclePose, an unsupervised method based on CycleGAN architecture
 - **Cross-Setting Performance**: Robust functionality across various endoscopic surgical environments
-- **Real-Time Capability**: Low inference time for seamless integration into surgical workflows
 
 ## 🛠 Refactoring Status
 
