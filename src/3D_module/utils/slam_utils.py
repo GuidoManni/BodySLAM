@@ -5,7 +5,7 @@ import open3d as o3d
 import torch
 import cv2
 from PIL import Image
-from tsdf import TSDF
+from .tsdf import TSDF
 
 def check_o3d_device() -> o3d.core.Device:
     """

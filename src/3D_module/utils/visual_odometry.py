@@ -1,10 +1,14 @@
+import sys
+import os
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..'))
+
 import numpy as np
 import torch
 import open3d as o3d
 import open3d.core as o3c
 from filterpy.kalman import UnscentedKalmanFilter, MerweScaledSigmaPoints
 from pose_estimation.interface import PoseEstimator
-from scaling_system import compute_scaling_factor
+from .scaling_system import compute_scaling_factor
 
 class VO:
     def __init__(self, path_to_model: str, intrinsic_t, intrinsic):
@@ -52,7 +56,7 @@ class VO:
         :param curr_frame: current frame
         :return: relative pose between two consecutive frames
         '''
-        transformation = self.mpem_interface.infer_relative_pose_between(prev_frame, curr_frame)
+        transformation = self.mpem_interface.estimate_relative_pose(prev_frame, curr_frame)
 
         if rgbd_odo:
             disp = self._compute_vo_o3d(curr_rgbd, prev_rgbd)[:3, 3]
