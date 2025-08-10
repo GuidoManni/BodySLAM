@@ -1,4 +1,7 @@
 import time
+import sys
+import os
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..'))
 
 import open3d as o3d
 import open3d.core as o3c
@@ -6,9 +9,8 @@ import open3d.visualization.gui as gui
 import open3d.visualization.rendering as rendering
 import numpy as np
 import threading
-import os
 
-from slam import SLAM
+from slam_interface import SLAM
 
 
 def set_enabled(widget, enable):
@@ -16,27 +18,46 @@ def set_enabled(widget, enable):
     for child in widget.get_children():
         child.enabled = enable
 class ReconstructionWindow:
-    def __init__(self, font_id):
-        # initialize the main window
+    """Main GUI window for BodySLAM 3D reconstruction interface."""
+    
+    def __init__(self, font_id: int, rgb_path: str, depth_path: str, model_path: str):
+        """Initialize the reconstruction window.
+        
+        Args:
+            font_id: Font identifier for GUI text
+            rgb_path: Path to RGB images directory
+            depth_path: Path to depth maps directory  
+            model_path: Path to visual odometry model
+        """
         self.window = gui.Application.instance.create_window('BodySLAM', 1280, 800)
-
-        # initialize slam
-        #depth_map_path = "/home/gvide/Scrivania/BodySLAM Results/3DM/BodySLAM/highcam_small_intestine_trajectory_1/depth"
-        #rgb_path = "/home/gvide/Scrivania/BodySLAM Results/3DM/BodySLAM/highcam_small_intestine_trajectory_1/Frames"
-        depth_map_path = "/home/gvide/Scrivania/slam_test/depth01"
-        rgb_path = "/home/gvide/Scrivania/slam_test/image01"
-        path_to_model = "/home/gvide/PycharmProjects/SurgicalSlam/MPEM/Model/9_best_model_gen_ab.pth"
-
-        rgb_list = sorted(os.listdir(rgb_path))
-        depth_list = sorted(os.listdir(depth_map_path))
-
-        for i in range(len(rgb_list)):
-            rgb_list[i] = os.path.join(rgb_path, rgb_list[i])
-            depth_list[i] = os.path.join(depth_map_path, depth_list[i])
-
-        self.slam = SLAM(rgb_list, depth_list, path_to_model)
-
-
+        
+        # Initialize SLAM system
+        self.slam = self._initialize_slam(rgb_path, depth_path, model_path)
+        
+        # Initialize GUI components
+        self._setup_gui(font_id)
+    
+    def _initialize_slam(self, rgb_path: str, depth_path: str, model_path: str) -> SLAM:
+        """Initialize the SLAM system with provided paths."""
+        if not os.path.exists(rgb_path):
+            raise FileNotFoundError(f"RGB path does not exist: {rgb_path}")
+        if not os.path.exists(depth_path):
+            raise FileNotFoundError(f"Depth path does not exist: {depth_path}")
+        if not os.path.exists(model_path):
+            raise FileNotFoundError(f"Model path does not exist: {model_path}")
+            
+        rgb_list = sorted([os.path.join(rgb_path, f) for f in os.listdir(rgb_path) if f.lower().endswith(('.jpg', '.jpeg', '.png'))])
+        depth_list = sorted([os.path.join(depth_path, f) for f in os.listdir(depth_path) if f.lower().endswith(('.jpg', '.jpeg', '.png'))])
+        
+        if len(rgb_list) != len(depth_list):
+            raise ValueError(f"Mismatch in number of RGB ({len(rgb_list)}) and depth ({len(depth_list)}) images")
+        if len(rgb_list) == 0:
+            raise ValueError("No valid images found in the provided directories")
+            
+        return SLAM(rgb_list, depth_list, model_path)
+    
+    def _setup_gui(self, font_id: int) -> None:
+        """Setup the GUI components."""
         w = self.window
         em = w.theme.font_size
 
@@ -48,60 +69,6 @@ class ReconstructionWindow:
         # First panel
         self.panel = gui.Vert(spacing, margins)
 
-        ## Items in fixed props
-        self.fixed_prop_grid = gui.VGrid(2, spacing, gui.Margins(em, 0, em, 0))
-
-        ### Depth Scale slider
-        scale_label = gui.Label('Depth scale')
-        self.scale_slider = gui.Slider(gui.Slider.INT)
-        self.scale_slider.set_limits(1000, 5000)
-        self.scale_slider.int_value = int(1000)
-        self.fixed_prop_grid.add_child(scale_label)
-        self.fixed_prop_grid.add_child(self.scale_slider)
-
-        ### Voxel length slider
-        voxel_size_label = gui.Label('Voxel length')
-        self.voxel_size_slider = gui.Slider(gui.Slider.DOUBLE)
-        self.voxel_size_slider.set_limits(0.001, 0.01)
-        self.voxel_size_slider.double_value = 0.001
-        self.fixed_prop_grid.add_child(voxel_size_label)
-        self.fixed_prop_grid.add_child(self.voxel_size_slider)
-
-        ### sdf trunc slider
-        trunc_multiplier_label = gui.Label('sdf trunc')
-        self.trunc_multiplier_slider = gui.Slider(gui.Slider.DOUBLE)
-        self.trunc_multiplier_slider.set_limits(0.1, 1.0)
-        self.trunc_multiplier_slider.double_value = 0.1
-        self.fixed_prop_grid.add_child(trunc_multiplier_label)
-        self.fixed_prop_grid.add_child(self.trunc_multiplier_slider)
-
-        ## Items in adjustable props
-        self.adjustable_prop_grid = gui.VGrid(2, spacing, gui.Margins(em, 0, em, 0))
-
-        ### PoseGraph Optimization Interval
-        interval_label = gui.Label('PoseGraph Optimization Interval')
-        self.interval_slider = gui.Slider(gui.Slider.INT)
-        self.interval_slider.set_limits(1, 100)
-        self.interval_slider.int_value = 50
-        self.adjustable_prop_grid.add_child(interval_label)
-        self.adjustable_prop_grid.add_child(self.interval_slider)
-
-        ### Loop Closure Checkbox
-        lc_label_checkbox = gui.Label('Loop Closure?')
-        self.lc_box = gui.Checkbox('')
-        self.lc_box.checked = False
-        self.adjustable_prop_grid.add_child(lc_label_checkbox)
-        self.adjustable_prop_grid.add_child(self.lc_box)
-
-        ### Loop Closure Interval
-        loop_closure_label = gui.Label('Loop Closure Interval')
-        self.lpc_interval_slider = gui.Slider(gui.Slider.INT)
-        self.lpc_interval_slider.set_limits(1, 100)
-        self.lpc_interval_slider.int_value = 50
-        self.adjustable_prop_grid.add_child(loop_closure_label)
-        self.adjustable_prop_grid.add_child(self.lpc_interval_slider)
-
-        set_enabled(self.fixed_prop_grid, True)
 
         ## Application control
         b = gui.ToggleSwitch('Resume/Pause')
@@ -127,11 +94,6 @@ class ReconstructionWindow:
         tab3.add_child(self.output_info)
         tabs.add_tab('Info', tab3)
 
-        self.panel.add_child(gui.Label('Starting settings'))
-        self.panel.add_child(self.fixed_prop_grid)
-        self.panel.add_fixed(vspacing)
-        self.panel.add_child(gui.Label('Reconstruction settings'))
-        self.panel.add_child(self.adjustable_prop_grid)
         self.panel.add_child(b)
         self.panel.add_stretch()
         self.panel.add_child(tabs)
@@ -207,8 +169,6 @@ class ReconstructionWindow:
         self.is_started = True
 
 
-        set_enabled(self.fixed_prop_grid, False)
-        set_enabled(self.adjustable_prop_grid, True)
 
     def _on_close(self):
         self.is_done = True
@@ -295,9 +255,33 @@ class ReconstructionWindow:
 
 
 
-print("ciao")
-app = gui.Application.instance
-app.initialize()
-mono = app.add_font(gui.FontDescription(gui.FontDescription.MONOSPACE))
-w = ReconstructionWindow(mono)
-app.run()
+def main():
+    """Main entry point for the GUI application."""
+    import argparse
+    
+    parser = argparse.ArgumentParser(description="BodySLAM 3D Reconstruction GUI")
+    parser.add_argument("--rgb_path", type=str, required=True, 
+                       help="Path to RGB images directory")
+    parser.add_argument("--depth_path", type=str, required=True,
+                       help="Path to depth maps directory")
+    parser.add_argument("--model_path", type=str, required=True,
+                       help="Path to visual odometry model")
+    
+    args = parser.parse_args()
+    
+    # Initialize GUI application
+    app = gui.Application.instance
+    app.initialize()
+    mono = app.add_font(gui.FontDescription(gui.FontDescription.MONOSPACE))
+    
+    try:
+        w = ReconstructionWindow(mono, args.rgb_path, args.depth_path, args.model_path)
+        app.run()
+    except (FileNotFoundError, ValueError) as e:
+        print(f"Error initializing SLAM: {e}")
+        return 1
+    
+    return 0
+
+if __name__ == "__main__":
+    exit(main())
