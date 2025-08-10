@@ -67,13 +67,6 @@ In the challenging world of endoscopic surgeries, where hardware limitations and
 
 - **CycleVO Weights**: Our pre-trained CycleVO model is available on Hugging Face: [https://huggingface.co/gvide/CycleVO/](https://huggingface.co/gvide/CycleVO/)
 
-## 🛠 Refactoring Status
-
-We're actively refactoring our codebase to enhance usability and performance. Here's our current progress:
-
-- [x] Monocular Depth Estimation Module (MDEM)
-- [x] Monocular Pose Estimation Module (MPEM)
-- [ ] 3D Reconstruction Module (3DM)
 
 ## 📘 Examples
 
@@ -121,6 +114,35 @@ We've included several examples to help you get started with BodySLAM:
        --output path/to/results
    ```
 
+### 3D Reconstruction Examples
+1. **Command-line SLAM**: Process RGB-D sequences for 3D reconstruction.
+   ```bash
+   python src/3D_module/slam_interface.py \
+       --rgb_path path/to/rgb_images \
+       --depth_path path/to/depth_maps \
+       --model_path path/to/CycleVO_model.pth \
+       --output_dir ./slam_results
+   ```
+
+2. **GUI Interface**: Interactive 3D reconstruction with real-time visualization.
+   ```bash
+   python src/3D_module/slam_interface_gui.py \
+       --rgb_path path/to/rgb_images \
+       --depth_path path/to/depth_maps \
+       --model_path path/to/CycleVO_model.pth
+   ```
+
+3. **Batch Processing**: Process with custom settings.
+   ```bash
+   # Quiet mode for minimal output
+   python src/3D_module/slam_interface.py \
+       --rgb_path path/to/rgb_images \
+       --depth_path path/to/depth_maps \
+       --model_path path/to/CycleVO_model.pth \
+       --output_dir ./results \
+       --quiet
+   ```
+
 ## 🚀 Installation
 
 1. Clone the repository:
@@ -147,8 +169,12 @@ BodySLAM/
 ├── src/
 │   ├── depth_estimation/
 │   │   └── interface.py
-│   └── pose_estimation/
-│       └── interface.py
+│   ├── pose_estimation/
+│   │   └── interface.py
+│   └── 3D_module/
+│       ├── slam_interface.py
+│       ├── slam_interface_gui.py
+│       └── utils/
 ├── examples/
 │   ├── depth_estimation/
 │   │   └── basic_depth_estimation.py
@@ -157,10 +183,6 @@ BodySLAM/
 └── tests/
 ```
 
-## 🔜 Coming Soon
-
-- **3D Reconstruction Module**: Refactoring of the 3D reconstruction module
-- **Enhanced Documentation**: More detailed tutorials and API documentation
 
 ## 🤝 Contributing
 
