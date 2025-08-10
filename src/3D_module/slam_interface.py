@@ -1,5 +1,7 @@
 import os
 import sys
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..'))
+
 from utils.slam_utils import *
 from utils.posegraph import PoseGraph
 from utils.tsdf import TSDF
@@ -9,10 +11,8 @@ class SLAM:
     def __init__(self, list_of_rgb: list[str], list_of_depth: list[str], path_to_vo_model: str):
         self._initialize_intrinsics()
         self.depth_scale = 1000
-        self.perform_loop_closure = False
         self.o3d_device, self.torch_device = device_handler()
         self._initialize_pose_estimation_variables()
-        self._initialize_loop_closure_variables()
         self._initialize_main_loop_variables(list_of_rgb, list_of_depth)
         self.map3D = o3d.geometry.PointCloud()
         self.global_posegraph = PoseGraph()
@@ -31,36 +31,52 @@ class SLAM:
         self.inv_global_motion = []
         self.global_extrinsic = []
 
-    def _initialize_loop_closure_variables(self):
-        self.num_closure = 10000
-        self.global_key_frame_indices = []
 
     def _initialize_main_loop_variables(self, list_of_rgb, list_of_depth):
         self.list_of_rgb = list_of_rgb
         self.list_of_depth = list_of_depth
         self.n_frames = len(list_of_rgb)
 
-    def _initialize_saving_paths(self):
-        self.pcd_save_path = "/home/gvide/Scrivania/slam_test/pcds/pcd_%_.ply"
-        self.mesh_save_path = "/home/gvide/Scrivania/slam_test/meshes/mesh_%_.ply"
+    def _initialize_saving_paths(self, output_dir: str = None):
+        """Initialize paths for saving point clouds and meshes."""
+        if output_dir is None:
+            output_dir = "./slam_output"
+        
+        # Create output directories if they don't exist
+        pcd_dir = os.path.join(output_dir, "pcds")
+        mesh_dir = os.path.join(output_dir, "meshes")
+        os.makedirs(pcd_dir, exist_ok=True)
+        os.makedirs(mesh_dir, exist_ok=True)
+        
+        self.pcd_save_path = os.path.join(pcd_dir, "pcd_%.ply")
+        self.mesh_save_path = os.path.join(mesh_dir, "mesh_%.ply")
 
-    def main_loop_no_gui(self):
+    def main_loop_no_gui(self, output_dir: str = None, verbose: bool = True):
+        """Execute the main SLAM loop without GUI.
+        
+        Args:
+            output_dir: Directory to save outputs (default: ./slam_output)
+            verbose: Whether to print progress information
+        """
+        if output_dir:
+            self._initialize_saving_paths(output_dir)
+            
         for i in range(self.n_frames):
-            print(f"[INFO]: Frame {i}/{self.n_frames}")
+            if verbose:
+                print(f"[INFO]: Processing frame {i+1}/{self.n_frames}")
+                
             if i == 0:
                 curr_rgbd, pcd, global_pose = self._first_loop()
                 prev_rgbd = None
             else:
                 curr_rgbd, prev_rgbd, pcd, global_pose = self._sequential_loop(i)
-                print(global_pose)
-                if self.perform_loop_closure and i % self.num_closure == 0:
-                    self._loop_closure()
+                if verbose:
+                    print(f"[INFO]: Current pose:\n{global_pose}")
 
     def main_loop_gui(self, i):
         if i == 0:
             return self._first_loop()
         elif i > 0:
-            print("hola")
             return self._sequential_loop(i)
 
     def _first_loop(self):
@@ -109,26 +125,78 @@ class SLAM:
                 self.tsdf = update_map_after_pg(self.global_extrinsic, self.list_of_rgb, self.list_of_depth, self.depth_scale, self.o3d_device, self.o3d_intrinsic)
 
     def _integrate_frame(self, curr_rgbd, curr_absolute_pose, i):
-        print("Integrating ...")
+        # Integrating current frame into 3D map
         self.tsdf.build_3D_map(curr_rgbd.rgbd_tsdf, self.o3d_intrinsic, curr_absolute_pose)
         if i % 2000 == 0:
             self.tsdf = update_map_after_pg(self.global_extrinsic, self.list_of_rgb, self.list_of_depth, self.depth_scale, self.o3d_device, self.o3d_intrinsic)
         if i == (self.n_frames - 1):
-            print("[INFO]: saving mesh and pcd")
-            self.tsdf.save_pcd(self.pcd_save_path.replace("%", str(i)))
-            self.tsdf.save_mesh(self.mesh_save_path.replace("%", str(i)))
-            sys.exit()
+            pcd_path = self.pcd_save_path.replace("%", str(i))
+            mesh_path = self.mesh_save_path.replace("%", str(i))
+            print(f"[INFO]: Saving point cloud to: {pcd_path}")
+            print(f"[INFO]: Saving mesh to: {mesh_path}")
+            self.tsdf.save_pcd(pcd_path)
+            self.tsdf.save_mesh(mesh_path)
+            print("[INFO]: SLAM processing completed successfully!")
 
-if __name__ == "__main__":
+def main():
+    """Main entry point for command-line SLAM execution."""
     import argparse
 
-    parser = argparse.ArgumentParser(description="SLAM system")
-    parser.add_argument("--depth_map_path", type=str, required=True, help="Path to the depth map directory")
-    parser.add_argument("--rgb_path", type=str, required=True, help="Path to the RGB images directory")
-    parser.add_argument("--path_to_model", type=str, required=True, help="Path to the visual odometry model")
+    parser = argparse.ArgumentParser(
+        description="BodySLAM: 3D reconstruction from RGB-D sequences",
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter
+    )
+    parser.add_argument("--rgb_path", type=str, required=True,
+                       help="Path to RGB images directory")
+    parser.add_argument("--depth_path", type=str, required=True, 
+                       help="Path to depth maps directory")
+    parser.add_argument("--model_path", type=str, required=True,
+                       help="Path to visual odometry model")
+    parser.add_argument("--output_dir", type=str, default="./slam_output",
+                       help="Output directory for results")
+    parser.add_argument("--verbose", action="store_true", default=True,
+                       help="Enable verbose output")
+    parser.add_argument("--quiet", action="store_true", 
+                       help="Disable verbose output")
+    
     args = parser.parse_args()
+    
+    # Validate input paths
+    for path, name in [(args.rgb_path, "RGB"), (args.depth_path, "Depth"), (args.model_path, "Model")]:
+        if not os.path.exists(path):
+            print(f"Error: {name} path does not exist: {path}")
+            return 1
+    
+    try:
+        # Get sorted lists of image files
+        rgb_files = sorted([f for f in os.listdir(args.rgb_path) 
+                           if f.lower().endswith(('.jpg', '.jpeg', '.png'))])
+        depth_files = sorted([f for f in os.listdir(args.depth_path) 
+                             if f.lower().endswith(('.jpg', '.jpeg', '.png'))])
+        
+        if not rgb_files or not depth_files:
+            print("Error: No valid image files found in the provided directories")
+            return 1
+            
+        if len(rgb_files) != len(depth_files):
+            print(f"Error: Mismatch in number of RGB ({len(rgb_files)}) and depth ({len(depth_files)}) images")
+            return 1
+        
+        rgb_list = [os.path.join(args.rgb_path, f) for f in rgb_files]
+        depth_list = [os.path.join(args.depth_path, f) for f in depth_files]
+        
+        print(f"[INFO]: Found {len(rgb_list)} image pairs")
+        print(f"[INFO]: Output directory: {args.output_dir}")
+        
+        # Initialize and run SLAM
+        slam = SLAM(rgb_list, depth_list, args.model_path)
+        slam.main_loop_no_gui(args.output_dir, verbose=not args.quiet)
+        
+        return 0
+        
+    except Exception as e:
+        print(f"Error during SLAM execution: {e}")
+        return 1
 
-    rgb_list = sorted([os.path.join(args.rgb_path, f) for f in os.listdir(args.rgb_path)])
-    depth_list = sorted([os.path.join(args.depth_map_path, f) for f in os.listdir(args.depth_map_path)])
-    slam = SLAM(rgb_list, depth_list, args.path_to_model)
-    slam.main_loop_no_gui()
+if __name__ == "__main__":
+    exit(main())
